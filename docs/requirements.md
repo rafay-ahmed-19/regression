@@ -26,9 +26,11 @@ Phase 1 (built) delivers the full user experience, with results either queried f
 | Phase | Status | Capabilities |
 | --- | --- | --- |
 | 1 — MVP | Built | Suites and steps, build-folder import, test point catalogue, runs with live progress, key-based diff, tolerance, baseline accept at 4 levels with audit and rollback, history and flaky detection, AI explanation, Build A vs B, impacted-only runs, PDF/XLSX sign-off export |
-| 1b — Oracle results | Built | Saved Oracle connections; runs that execute each test point's SQL on a chosen database and compare the rows with the baseline; Build A vs B across two databases |
+| 1b — Oracle results | Built | Saved Oracle connections; runs that execute each test point's SQL on a chosen database and compare the rows with the baseline; Build A vs B across two databases; SQL workbench; loading a single Excel workbook |
 | 2 — Build execution | Backlog (P0) | On-prem runner agent that checks out the branch and runs the steps on the build folder; Git integration for real branches and changed files; data snapshot and restore |
 | 3 — Automation and team | Backlog (P1–P2) | Login and roles (who may accept baselines), nightly and on-commit schedules, failure notifications (email/Teams/Slack), per-column ignore rules, data masking, per-checkpoint trends |
+
+The application starts with an empty database; demo data is loaded only when `SEED_DEMO=true`.
 
 **Out of scope for Phase 1.** The Hub does not execute builds: an Oracle run assumes the build has already run on the chosen database and skips the build steps. Simulated runs remain for demos, with a static branch list and changed files. The Hub must be able to reach Oracle over the network (for example with the company VPN on). Oracle passwords are stored in MongoDB with the connection. There is no login: anyone with the link can use the app and the acceptance log records a typed name. One baseline per test point (not per branch).
 
@@ -115,7 +117,7 @@ The dashboard summarises pass rate, open failures, flaky points and baseline upd
 
 ## 5. Functional requirements
 
-Thirty-six requirements across nine areas; all marked Must are built in Phase 1 unless noted.
+Thirty-seven requirements across nine areas; all marked Must are built in Phase 1 unless noted.
 
 ### 5.1 Suites and steps (replaces the Excel driver)
 
@@ -129,7 +131,7 @@ Thirty-six requirements across nine areas; all marked Must are built in Phase 1 
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| FR-04 | Users pick a folder (or a zip of it). The number prefix on each item sets step order (e.g. `10.`, `20.`). | Must |
+| FR-04 | Users pick a folder (or a zip of it), or a single Excel workbook on its own. In a folder the number prefix on each item sets step order (e.g. `10.`, `20.`). A workbook on its own becomes a suite with one validate checkpoint. | Must |
 | FR-05 | Mapping rules: a sub-folder of `.sql` files → setup SQL step; `.zip` → data-load step (mode, COB date and source read from the file name); `.properties` → run-job step with its key/values; `o_validation*.xls(x)` → validate checkpoint. | Must |
 | FR-06 | Inside a validation workbook, every sheet whose name starts with `r` becomes a test point: SQL from the first rows, column headers from the header row (row 2 by default), expected rows below seed the baseline. | Must |
 | FR-07 | Before creating the suite, a review screen shows every sheet with its detected SQL row, header row, columns and suggested key columns; sheets with issues (no SQL, no data, duplicate columns) are flagged and can be corrected or excluded. | Must |
@@ -158,7 +160,7 @@ Thirty-six requirements across nine areas; all marked Must are built in Phase 1 
 | --- | --- | --- |
 | FR-16 | Rows are matched on the test point's key columns; with no key, rows are matched by position. Row order changes must not cause failures. | Must |
 | FR-17 | Each difference is classified as modified (lists the changed cells), missing (in baseline, not in actual) or extra (in actual, not in baseline). | Must |
-| FR-18 | A numeric tolerance (±) per test point treats small numeric differences as equal. | Must |
+| FR-18 | A numeric tolerance (±) per test point treats small numeric differences as equal. A number and the same number held as text (an Excel number against an Oracle VARCHAR2) are equal. | Must |
 | FR-19 | Per-column ignore rules (timestamps, sequence IDs) and date-only compare. | Should (P2) |
 
 ### 5.6 Failure analysis
@@ -197,6 +199,7 @@ Thirty-six requirements across nine areas; all marked Must are built in Phase 1 
 | FR-34 | A run can use a saved connection. The Hub executes each test point's SQL on that database, takes the returned rows as the actual result and compares them with the baseline. Build steps are skipped because the build has already run there. SQL is run as written; values are part of the query, not bound at run time. | Must |
 | FR-35 | Build A vs B can run one suite on two Oracle connections and compare the two results with each other. | Must |
 | FR-36 | Only SELECT (or WITH ... SELECT) statements are executed. A query that fails is shown as an error on its test point with Oracle's message and does not stop the other test points. An unreachable database stops the run with a clear message. | Must |
+| FR-37 | A SQL workbench runs a query on a chosen connection and shows the first rows (up to 5,000), the row count and the duration. It can load a test point's SQL and save an edited query back to it. The same SELECT-only rule applies. | Must |
 
 ## 6. Data and integrations
 

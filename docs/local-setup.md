@@ -194,8 +194,8 @@ cd backend
 4. Wait until you see the line **Application startup complete**.
 5. Open your browser and go to **http://localhost:8000**
 
-The first time, the app fills itself with two example suites and a history of runs so that you have
-something to look at. The [user guide](user-guide.md) explains every screen.
+The app starts empty. You fill it by loading your own Excel workbooks; the
+[user guide](user-guide.md) explains how, and covers every screen.
 
 **Keep the terminal open** while you use the app. The app stops when you close it.
 
@@ -239,6 +239,20 @@ The **Analyse failure** button needs a key from Anthropic. Everything else works
 5. Save the file (Ctrl + S), then stop and start the app.
 
 Keep this key private. Do not email it or share the `.env` file.
+
+## Optional: load example data
+
+If you want to look around before loading your own workbooks, the app can fill an **empty** database
+with two example suites and a history of runs.
+
+1. Create the `backend/.env` file as described under "turn on AI failure analysis" above, if you
+   have not already.
+2. In `.env`, change the line `SEED_DEMO=false` to `SEED_DEMO=true` and save.
+3. Stop and start the app.
+
+This only happens when the database has no suites yet. The examples use simulated results, not
+your Oracle database. Delete the two example suites on the Suites page when you no longer want them,
+and set the line back to `false`.
 
 ## Getting a newer version of the app
 

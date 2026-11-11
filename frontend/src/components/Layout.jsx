@@ -7,6 +7,7 @@ import PlayCircleOutlined from "@mui/icons-material/PlayCircleOutlined";
 import CompareArrowsOutlined from "@mui/icons-material/CompareArrowsOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
 import StorageOutlined from "@mui/icons-material/StorageOutlined";
+import TerminalOutlined from "@mui/icons-material/TerminalOutlined";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: DashboardOutlined, end: true },
@@ -15,6 +16,7 @@ const NAV = [
   { to: "/runs", label: "Runs", icon: PlayCircleOutlined },
   { to: "/compare", label: "Build A vs B", icon: CompareArrowsOutlined },
   { to: "/baselines", label: "Baselines", icon: HistoryOutlined },
+  { to: "/workbench", label: "SQL workbench", icon: TerminalOutlined },
   { to: "/connections", label: "Connections", icon: StorageOutlined },
 ];
 

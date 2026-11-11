@@ -1,7 +1,9 @@
 """Comparison engine: key-based row matching with numeric tolerance (FR-16 to FR-18)."""
+import re
 from typing import Any
 
 EPS = 1e-9
+_NUMERIC_TEXT = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)$")
 
 
 def _is_number(v: Any) -> bool:
@@ -38,9 +40,23 @@ def row_keys(rows: list[list], columns: list[str], key_columns: list[str]) -> li
     return keys
 
 
+def _numeric(v: Any):
+    """A number, or text that is plainly a number (Excel turns such text into numbers)."""
+    if _is_number(v):
+        return v
+    if isinstance(v, str) and _NUMERIC_TEXT.match(v.strip()):
+        return float(v)
+    return None
+
+
 def values_equal(a: Any, b: Any, tolerance: float = 0.0) -> bool:
     if _is_number(a) and _is_number(b):
         return abs(a - b) <= tolerance + EPS
+    if _is_number(a) != _is_number(b):
+        # One side is a number, the other text: 100100 in Excel is '100100' in a VARCHAR2 column.
+        x, y = _numeric(a), _numeric(b)
+        if x is not None and y is not None:
+            return abs(x - y) <= tolerance + EPS
     if a in (None, "") and b in (None, ""):
         return True
     return a == b

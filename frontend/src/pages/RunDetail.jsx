@@ -158,7 +158,12 @@ function ResultPanel({ run, summary, onChanged }) {
           <StatusChip status="error" />
         </Stack>
         <Alert severity="error">{summary.error || "This test point was not compared because the run stopped."}</Alert>
-        {summary.error && <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>The query could not be run, so there is nothing to compare. Fix the SQL in the Catalogue or the database, then run again.</Typography>}
+        {summary.error && (
+          <Stack direction="row" sx={{ alignItems: "center", gap: 1.5, mt: 1.5 }}>
+            <Button variant="outlined" component={RouterLink} to={`/workbench?tp=${tid}`}>Open SQL in workbench</Button>
+            <Typography variant="caption" color="text.secondary">Nothing was compared. Fix the query, then run again.</Typography>
+          </Stack>
+        )}
       </Paper>
     );
   }
@@ -223,6 +228,9 @@ function ResultPanel({ run, summary, onChanged }) {
         <Box sx={{ fontFamily: MONO, fontSize: 12.5, bgcolor: "#f8fafc", border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, whiteSpace: "pre-wrap" }}>
           {res.sql || "No SQL recorded for this test point."}
         </Box>
+      )}
+      {tab === "sql" && res.test_point_exists && (
+        <Button component={RouterLink} to={`/workbench?tp=${tid}`} sx={{ mt: 1 }}>Open in workbench</Button>
       )}
 
       <AcceptDialog

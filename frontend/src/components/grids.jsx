@@ -60,7 +60,7 @@ export function DataTable({ columns, rows, keyColumns = [], height = 460, label 
       <thead>
         <tr>
           <Box component="th" scope="col" sx={{ ...headSx, width: 52, color: "#94a3b8" }}>#</Box>
-          {columns.map((c) => <HeadCell key={c} name={c} isKey={keyColumns.includes(c)} />)}
+          {columns.map((c, j) => <HeadCell key={j} name={c} isKey={keyColumns.includes(c)} />)}
         </tr>
       </thead>
       <tbody>
@@ -69,7 +69,7 @@ export function DataTable({ columns, rows, keyColumns = [], height = 460, label 
           <tr key={win.start + i}>
             <Box component="td" sx={{ ...cellSx, color: "#94a3b8" }}>{win.start + i + 1}</Box>
             {columns.map((c, j) => (
-              <Box component="td" key={c} sx={{ ...cellSx, textAlign: isNum(r[j]) ? "right" : "left" }} title={fmtCell(r[j])}>
+              <Box component="td" key={j} sx={{ ...cellSx, textAlign: isNum(r[j]) ? "right" : "left" }} title={fmtCell(r[j])}>
                 {fmtCell(r[j])}
               </Box>
             ))}

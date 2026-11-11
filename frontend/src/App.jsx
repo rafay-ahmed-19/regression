@@ -9,6 +9,7 @@ import RunDetail from "./pages/RunDetail.jsx";
 import Compare from "./pages/Compare.jsx";
 import Baselines from "./pages/Baselines.jsx";
 import Connections from "./pages/Connections.jsx";
+import Workbench from "./pages/Workbench.jsx";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="compare" element={<Compare />} />
         <Route path="baselines" element={<Baselines />} />
         <Route path="connections" element={<Connections />} />
+        <Route path="workbench" element={<Workbench />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

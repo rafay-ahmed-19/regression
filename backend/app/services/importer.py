@@ -163,8 +163,12 @@ def parse_properties(data: bytes) -> dict[str, str]:
     return props
 
 
-def build_from_folder(files: dict[str, bytes]) -> dict:
-    """Map folder items to ordered steps and collect every `r` sheet for review."""
+def build_from_folder(files: dict[str, bytes], any_workbook: bool = False) -> dict:
+    """Map folder items to ordered steps and collect every `r` sheet for review.
+
+    In a folder only `o_validation*` workbooks hold test points. With `any_workbook`
+    (a workbook uploaded on its own) every Excel file does.
+    """
     root, files = normalize(files)
     if not files:
         raise ImportError_("The folder is empty")
@@ -185,7 +189,7 @@ def build_from_folder(files: dict[str, bytes]) -> dict:
         item = top[name]
         m = NUMBERED.match(name)
         label = m.group(2) if m else name
-        if not m:
+        if not m and not any_workbook:
             warnings.append(f"{name}: no number prefix, placed after the numbered items")
         step_id = str(uuid.uuid4())
         low = name.lower()
@@ -206,7 +210,7 @@ def build_from_folder(files: dict[str, bytes]) -> dict:
         elif low.endswith(".properties"):
             steps.append({"id": step_id, "type": "run_job", "name": f"Run {label.rsplit('.', 1)[0]}",
                           "command": name, "files": [], "detail": parse_properties(item)})
-        elif low.endswith((".xls", ".xlsx")) and label.lower().startswith("o_validation"):
+        elif low.endswith((".xls", ".xlsx")) and (any_workbook or label.lower().startswith("o_validation")):
             checkpoint = label.rsplit(".", 1)[0]
             count = 0
             try:

@@ -154,8 +154,8 @@ async def check(conn: dict) -> str:
         await _close(connection)
 
 
-async def query(conn: dict, sql: str, columns: list[str]) -> list[list]:
-    """Rows returned by `sql`, normalised and ordered like `columns`."""
+async def fetch(conn: dict, sql: str, limit: int = MAX_ROWS) -> tuple[list[str], list[list], bool]:
+    """Run a query. Returns (column names, normalised rows up to `limit`, whether more rows exist)."""
     statement = clean_sql(sql)
     connection = await _open(conn)
     try:
@@ -165,7 +165,7 @@ async def query(conn: dict, sql: str, columns: list[str]) -> list[list]:
             cursor.arraysize = 1000
             await asyncio.wait_for(cursor.execute(statement), QUERY_SECONDS + 10)
             returned = [d[0] for d in cursor.description or []]
-            raw = await asyncio.wait_for(cursor.fetchmany(MAX_ROWS + 1), QUERY_SECONDS + 10)
+            raw = await asyncio.wait_for(cursor.fetchmany(limit + 1), QUERY_SECONDS + 10)
         finally:
             cursor.close()
     except OracleError:
@@ -174,7 +174,13 @@ async def query(conn: dict, sql: str, columns: list[str]) -> list[list]:
         raise OracleError(friendly(exc, conn)) from exc
     finally:
         await _close(connection)
-    if len(raw) > MAX_ROWS:
+    return returned, [[normalize(v) for v in row] for row in raw[:limit]], len(raw) > limit
+
+
+async def query(conn: dict, sql: str, columns: list[str]) -> list[list]:
+    """Rows returned by `sql`, normalised and ordered like `columns`."""
+    returned, rows, more = await fetch(conn, sql)
+    if more:
         raise OracleError(f"The query returned more than {MAX_ROWS:,} rows. Narrow it down; "
                           "results are compared up to that size.")
-    return align(columns, returned, [[normalize(v) for v in row] for row in raw])
+    return align(columns, returned, rows)

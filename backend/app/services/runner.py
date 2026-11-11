@@ -29,7 +29,8 @@ async def select_test_points(suite_id: str, branch: dict, impacted_only: bool) -
 
 
 async def create_run(suite_id: str, branch_name: str, impacted_only: bool = False, user: str = "",
-                     started_at: datetime | None = None, connection_id: str | None = None) -> dict:
+                     started_at: datetime | None = None, connection_id: str | None = None,
+                     run_id: str | None = None) -> dict:
     """Create a queued run.
 
     With `connection_id` the run queries that Oracle database and `branch_name` is a free
@@ -68,7 +69,7 @@ async def create_run(suite_id: str, branch_name: str, impacted_only: bool = Fals
     else:
         fallback = None
 
-    run_id = str(uuid.uuid4())
+    run_id = run_id or str(uuid.uuid4())
     run = {
         "id": run_id, "suite_id": suite_id, "suite_name": suite["name"], "build_folder": suite.get("build_folder", ""),
         "branch": branch["name"], "branch_type": branch["type"], "commit": branch["commit"],

@@ -42,7 +42,7 @@ export default function LaunchRunDialog({ open, onClose, suiteId: initialSuite =
   useEffect(() => {
     if (!open || !connections.data) return;
     const last = localStorage.getItem(SOURCE_KEY);
-    setSource(connections.data.some((c) => c.id === last) ? last : SIMULATED);
+    setSource(last === SIMULATED ? SIMULATED : connections.data.some((c) => c.id === last) ? last : connections.data[0]?.id || SIMULATED);
   }, [open, connections.data]);
 
   const oracle = source !== SIMULATED;

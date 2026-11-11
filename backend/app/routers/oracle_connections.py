@@ -1,10 +1,11 @@
 """Oracle databases that runs can query. Passwords are stored but never returned."""
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException
 
 from ..db import NO_ID, db, iso
-from ..schemas import OracleConnectionIn, OracleConnectionTest
+from ..schemas import OracleConnectionIn, OracleConnectionTest, QueryIn
 from ..services import oracle
 
 router = APIRouter(tags=["oracle connections"])
@@ -80,3 +81,16 @@ async def test_details(body: OracleConnectionTest):
 @router.post("/oracle-connections/{connection_id}/test")
 async def test_saved(connection_id: str):
     return await _test(await load_connection(connection_id, with_password=True))
+
+
+@router.post("/oracle-connections/{connection_id}/query")
+async def run_query(connection_id: str, body: QueryIn):
+    """Workbench: run one query and return the first rows. Read-only statements only."""
+    conn = await load_connection(connection_id, with_password=True)
+    started = time.monotonic()
+    try:
+        columns, rows, more = await oracle.fetch(conn, body.sql, body.max_rows)
+    except oracle.OracleError as exc:
+        raise HTTPException(400, str(exc))
+    return {"columns": columns, "rows": rows, "row_count": len(rows), "truncated": more,
+            "duration_ms": int((time.monotonic() - started) * 1000)}

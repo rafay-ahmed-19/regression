@@ -6,6 +6,7 @@ import {
 } from "@mui/material";
 import ExpandMore from "@mui/icons-material/ExpandMore";
 import ExpandLess from "@mui/icons-material/ExpandLess";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
 import FolderZipOutlined from "@mui/icons-material/FolderZipOutlined";
 import { api } from "../api.js";
@@ -105,6 +106,7 @@ export default function ImportDialog({ open, onClose }) {
   const notify = useNotify();
   const folderInput = useRef(null);
   const zipInput = useRef(null);
+  const excelInput = useRef(null);
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -168,21 +170,24 @@ export default function ImportDialog({ open, onClose }) {
 
   return (
     <Dialog open={open} onClose={busy ? undefined : close} maxWidth={draft ? "lg" : "sm"} fullWidth>
-      <DialogTitle>{draft ? `Review import · ${draft.name}` : "Import test folder"}</DialogTitle>
+      <DialogTitle>{draft ? `Review import · ${draft.name}` : "Import from Excel or a folder"}</DialogTitle>
       {busy && <LinearProgress />}
       <DialogContent dividers>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {!draft ? (
           <Stack sx={{ gap: 2 }}>
             <Typography color="text.secondary">
-              Numbered items become ordered steps. Every sheet starting with <Mono>r</Mono> in an <Mono>o_validation</Mono> workbook
-              becomes a test point, and its expected rows become baseline version 1.
+              Load an Excel workbook: every sheet whose name starts with <Mono>r</Mono> becomes a test point. Its SQL is read from
+              row 1, its column headers from row 2, and the rows below become baseline version 1. You can also load a whole
+              build folder, where numbered items become ordered steps and <Mono>o_validation</Mono> workbooks hold the test points.
             </Typography>
             <Stack direction="row" sx={{ gap: 1.5 }}>
-              <Button variant="contained" startIcon={<FolderOpenOutlined />} onClick={() => folderInput.current.click()} disabled={busy}>Choose folder</Button>
+              <Button variant="contained" startIcon={<DescriptionOutlined />} onClick={() => excelInput.current.click()} disabled={busy}>Choose Excel file</Button>
+              <Button variant="outlined" startIcon={<FolderOpenOutlined />} onClick={() => folderInput.current.click()} disabled={busy}>Choose folder</Button>
               <Button variant="outlined" startIcon={<FolderZipOutlined />} onClick={() => zipInput.current.click()} disabled={busy}>Choose zip</Button>
             </Stack>
             <input ref={folderInput} type="file" hidden webkitdirectory="" directory="" multiple onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
+            <input ref={excelInput} type="file" hidden accept=".xlsx,.xls" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
             <input ref={zipInput} type="file" hidden accept=".zip" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
           </Stack>
         ) : (
@@ -231,7 +236,7 @@ export default function ImportDialog({ open, onClose }) {
         )}
       </DialogContent>
       <DialogActions>
-        {draft && <Button onClick={() => { api(`/imports/${draft.id}`, { method: "DELETE" }).catch(() => {}); reset(); }} disabled={busy} sx={{ mr: "auto" }}>Choose another folder</Button>}
+        {draft && <Button onClick={() => { api(`/imports/${draft.id}`, { method: "DELETE" }).catch(() => {}); reset(); }} disabled={busy} sx={{ mr: "auto" }}>Choose another file</Button>}
         <Button onClick={close} disabled={busy}>Cancel</Button>
         {draft && (
           <Tooltip title={flagged ? "Correct or exclude the flagged sheets first" : included.length === 0 && draft.sheets.length ? "Include at least one sheet" : ""}>

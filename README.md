@@ -19,7 +19,7 @@ the build has already run, or simulated for demos.
 | Area | Screens | Requirements |
 | --- | --- | --- |
 | Suites and ordered steps, input zips | Suites, suite detail | FR-01 to FR-03 |
-| Import an existing build folder (or a zip of it), with a review step | Suites → Import test folder | FR-04 to FR-08 |
+| Load an Excel workbook, or a whole build folder, with a review step | Suites → Import Excel or folder | FR-04 to FR-08 |
 | Test point catalogue: search, filters, CSV, single and bulk edit/delete | Catalogue | FR-09 to FR-11 |
 | Runs on any branch or release, impacted-only mode, live progress, history | Runs, run detail | FR-12 to FR-15 |
 | Key-based comparison, modified / missing / extra, numeric tolerance | Run detail | FR-16 to FR-18 |
@@ -29,6 +29,7 @@ the build has already run, or simulated for demos.
 | Versioned baselines, accept at cell / row / test point / run level, audit, rollback | Run detail, Baselines | FR-25 to FR-29 |
 | Dashboard KPIs, PDF and Excel sign-off reports | Dashboard, run detail | FR-30, FR-31 |
 | Oracle connections; runs that execute each test point's SQL on a chosen database; two databases compared with each other | Connections, New run, Build A vs B | FR-33 to FR-36 |
+| SQL workbench for trying queries on a chosen database | SQL workbench | FR-37 |
 
 Not built yet, as planned in the requirements: per-column ignore rules (FR-19), notifications and
 schedules (FR-32), login and roles, and build execution through an on-prem runner (Phases 2 and 3).
@@ -70,7 +71,8 @@ for example with the company VPN connected.
 docker compose up --build
 ```
 
-Then open http://localhost:8000. The first start loads two demo suites and a run history.
+Then open http://localhost:8000. The app starts empty; set `SEED_DEMO=true` to load two demo suites
+and a run history into an empty database.
 
 ### Locally
 
@@ -97,9 +99,11 @@ API documentation is at http://localhost:8000/api/docs.
 
 ### Try the import
 
+On the Suites page choose **Import Excel or folder**. A workbook on its own is enough: every sheet
+starting with `r` becomes a test point (SQL in row 1, headers in row 2, baseline rows below).
 `samples/loan_accrual/` is a small build folder (setup SQL, a data-load zip, a job `.properties`
-file and an `o_validation` workbook with three `r` sheets). On the Suites page choose
-**Import test folder** and pick that folder or `samples/loan_accrual.zip`.
+file and an `o_validation` workbook with three `r` sheets); pick that folder,
+`samples/loan_accrual.zip`, or just the workbook inside it.
 Regenerate it with `python -m scripts.make_sample_folder` from `backend/`.
 
 ## Configuration
@@ -111,7 +115,7 @@ Set these as environment variables or in `backend/.env`.
 | `MONGO_URL` | `mongodb://localhost:27017` | MongoDB connection string |
 | `DB_NAME` | `regression_hub` | Database name |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins allowed to call the API |
-| `SEED_DEMO` | `true` | Load demo data into an empty database |
+| `SEED_DEMO` | `false` | Set to `true` to load demo data into an empty database |
 | `SIM_SPEED` | `1.0` | Multiplier for simulated durations; `0` makes runs instant |
 | `ANTHROPIC_API_KEY` | none | Enables AI failure analysis |
 | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | Model used for the analysis |
@@ -142,7 +146,8 @@ backend/
   scripts/make_sample_folder.py
   tests/
 frontend/
-  src/pages/           Dashboard, Suites, SuiteDetail, Catalogue, Runs, RunDetail, Compare, Baselines, Connections
+  src/pages/           Dashboard, Suites, SuiteDetail, Catalogue, Runs, RunDetail, Compare, Baselines,
+                       Workbench, Connections
   src/dialogs/         import, launch run, accept, AI panel, test point forms
   src/components/      layout, grids, shared pieces
 ```

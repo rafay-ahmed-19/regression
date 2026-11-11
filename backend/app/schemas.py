@@ -118,6 +118,11 @@ class OracleConnectionIn(BaseModel):
         return self
 
 
+class QueryIn(BaseModel):
+    sql: str = Field(min_length=1, max_length=200_000)
+    max_rows: int = Field(default=500, ge=1, le=5000)
+
+
 class OracleConnectionTest(OracleConnectionIn):
     # Test an edited connection with its saved password when none is typed.
     id: str | None = None

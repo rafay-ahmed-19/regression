@@ -68,15 +68,15 @@ export default function Suites() {
         title="Suites"
         actions={
           <>
-            <Button variant="outlined" startIcon={<DriveFolderUpload />} onClick={() => setDialog("import")}>Import test folder</Button>
+            <Button variant="outlined" startIcon={<DriveFolderUpload />} onClick={() => setDialog("import")}>Import Excel or folder</Button>
             <Button variant="contained" startIcon={<Add />} onClick={() => setDialog("new")}>New suite</Button>
           </>
         }
       />
       {loading && !data ? <Loading /> : error && !data ? <ErrorState error={error} onRetry={reload} /> : data.length === 0 ? (
         <Paper variant="outlined">
-          <Empty title="No suites yet" action={<Button variant="contained" onClick={() => setDialog("import")}>Import test folder</Button>}>
-            Import an existing build folder or create a suite from scratch.
+          <Empty title="No suites yet" action={<Button variant="contained" onClick={() => setDialog("import")}>Import Excel or folder</Button>}>
+            Load a validation workbook to create a suite with its test points and baselines.
           </Empty>
         </Paper>
       ) : (

@@ -56,3 +56,12 @@ def test_accept_row_cell_missing_and_extra():
         apply_acceptance(COLS, ["ID"], BASE, actual, "C", "AMOUNT")
     with pytest.raises(ValueError):
         apply_acceptance(COLS, ["ID"], BASE, actual, "ZZ")
+
+
+def test_number_in_excel_equals_same_number_as_text_from_oracle():
+    from app.services.compare import values_equal
+    assert values_equal(100100, "100100") and values_equal("2500.50", 2500.5) and values_equal(7, " 7 ")
+    assert values_equal(100.0, "100.004", 0.01) and not values_equal(100, "100.5")
+    assert not values_equal(100100, "100100A") and not values_equal(0, "") and not values_equal(1, "1e3")
+    assert not values_equal("00123", "123")  # two texts are compared exactly
+    assert not values_equal(True, "1")

@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     db_name: str = "regression_hub"
     cors_origins: str = "http://localhost:5173"
 
-    # Load the demo suites and run history into an empty database on first start.
-    seed_demo: bool = True
+    # Set to true to load demo suites and a run history into an empty database at start-up.
+    seed_demo: bool = False
     # Multiplier for simulated step and query durations. 0 makes runs instant.
     sim_speed: float = 1.0
 

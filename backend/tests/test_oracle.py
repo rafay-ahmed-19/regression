@@ -303,3 +303,92 @@ async def test_compare_two_oracle_databases(client, fake):
     third = (await finish(client, r.json()["id"]))["id"]
     out = (await client.get(f"/api/compare?run_a={ids[0]}&run_b={third}")).json()
     assert out["errors"] == ["r_int"] and out["only_a"] == [] and out["summary"]["compared"] == 1
+
+
+# --------------------------------------------------------------- workbench
+
+async def test_workbench_runs_a_query_and_limits_rows(client, fake):
+    conn = await make_conn(client)
+    fake.tables["ln_bal"] = (["ID", "AMOUNT", "BOOKED"], [(str(i), decimal.Decimal(i) / 4, dt.datetime(2026, 6, 12)) for i in range(30)])
+    r = await client.post(f"/api/oracle-connections/{conn['id']}/query", json={"sql": "select * from ln_bal;", "max_rows": 10})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["columns"] == ["ID", "AMOUNT", "BOOKED"] and out["row_count"] == 10 and out["truncated"] is True
+    assert out["rows"][1] == ["1", 0.25, "2026-06-12"] and out["duration_ms"] >= 0
+    full = (await client.post(f"/api/oracle-connections/{conn['id']}/query", json={"sql": "select * from ln_bal"})).json()
+    assert full["row_count"] == 30 and full["truncated"] is False
+
+    bad = await client.post(f"/api/oracle-connections/{conn['id']}/query", json={"sql": "select * from nowhere"})
+    assert bad.status_code == 400 and bad.json()["detail"] == "ORA-00942: table or view does not exist"
+    blocked = await client.post(f"/api/oracle-connections/{conn['id']}/query", json={"sql": "drop table ln_bal"})
+    assert blocked.status_code == 400 and "Only SELECT" in blocked.json()["detail"]
+    assert all("drop" not in s for s in fake.executed)
+    assert (await client.post("/api/oracle-connections/nope/query", json={"sql": "select 1 from dual"})).status_code == 404
+    assert fake.opened == fake.closed
+
+
+# ------------------------------- the whole flow: Excel workbook -> Oracle run
+
+async def test_excel_workbook_becomes_baseline_then_oracle_run_compares_and_updates_it(client, fake):
+    import io
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.active.title = "notes"                       # ignored: does not start with r
+    bal = wb.create_sheet("r_balances")
+    bal.append(["SELECT account, entity, balance FROM gl_bal WHERE cob = DATE '2026-06-12'"])  # row 1: SQL
+    bal.append(["account", "entity", "balance"])                                                # row 2: header
+    for row in ([100100, "UK01", 2500.5], [100100, "US02", 10], [210000, "UK01", -75.25]):      # row 3+: baseline
+        bal.append(row)
+    rates = wb.create_sheet("R_RATES")
+    rates.append(["select ccy, rate from fx_rates"])
+    rates.append(["CCY", "RATE"])
+    rates.append(["EUR", 1.0842])
+    rates.append(["GBP", 1.2719])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    # 1. load the Excel file on its own (any file name)
+    draft = (await client.post("/api/imports", files=[("files", ("June close checks.xlsx", buf.getvalue()))])).json()
+    assert draft["name"] == "June close checks" and [s["type"] for s in draft["steps"]] == ["validate"]
+    assert [s["sheet_name"] for s in draft["sheets"]] == ["r_balances", "R_RATES"] and draft["ready"]
+    assert draft["sheets"][0]["header_row"] == 2 and draft["sheets"][0]["key_columns"] == ["ACCOUNT", "ENTITY"]
+    done = await client.post(f"/api/imports/{draft['id']}/commit", json={"name": "June close checks"})
+    assert done.status_code == 201 and done.json()["test_points"] == 2
+
+    # 2. one test point per r-sheet, each with its own SQL and its rows as baseline v1
+    tps = {t["sheet_name"]: t for t in (await client.get("/api/test-points")).json()["items"]}
+    bal_tp = (await client.get(f"/api/test-points/{tps['r_balances']['id']}")).json()
+    assert bal_tp["sql"].startswith("SELECT account, entity, balance FROM gl_bal")
+    assert bal_tp["columns"] == ["ACCOUNT", "ENTITY", "BALANCE"] and bal_tp["baseline_version"] == 1
+    assert bal_tp["baseline_rows"] == [[100100, "UK01", 2500.5], [100100, "US02", 10], [210000, "UK01", -75.25]]
+    rate_tp = (await client.get(f"/api/test-points/{tps['R_RATES']['id']}")).json()
+    assert rate_tp["sql"] == "select ccy, rate from fx_rates" and rate_tp["baseline_rows"] == [["EUR", 1.0842], ["GBP", 1.2719]]
+
+    # 3. run on Oracle. Oracle returns account as text and numbers as Decimal, in another order:
+    #    that must not count as a difference. One balance and one rate really changed.
+    conn = await make_conn(client)
+    fake.tables["gl_bal"] = (["ACCOUNT", "ENTITY", "BALANCE"], [
+        ("210000", "UK01", decimal.Decimal("-75.25")), ("100100", "US02", decimal.Decimal("10")),
+        ("100100", "UK01", decimal.Decimal("2600.50"))])
+    fake.tables["fx_rates"] = (["CCY", "RATE"], [("EUR", decimal.Decimal("1.0842")), ("GBP", decimal.Decimal("1.2801"))])
+    run = await finish(client, (await client.post("/api/runs", json={"suite_id": done.json()["suite"]["id"], "connection_id": conn["id"]})).json()["id"])
+    assert (run["status"], run["failed"], run["errors"]) == ("failed", 2, 0)
+    assert fake.executed[-2:] and any("gl_bal" in s for s in fake.executed) and any("fx_rates" in s for s in fake.executed)
+    res = (await client.get(f"/api/runs/{run['id']}/results/{bal_tp['id']}")).json()
+    assert res["matched"] == 2 and [(d["key"], d["type"], d["cells"]) for d in res["diffs"]] == [("100100 | UK01", "modified", ["BALANCE"])]
+
+    # 4. update one test point's baseline with the actual result; the other stays as it was
+    ok = await client.post(f"/api/runs/{run['id']}/accept", json={
+        "scope": "test_point", "test_point_id": bal_tp["id"], "user": "rafay", "reason": "June adjustment posted"})
+    assert ok.status_code == 200 and ok.json()["accepted"][0]["version"] == 2
+    after = (await client.get(f"/api/runs/{run['id']}")).json()
+    by = {x["sheet_name"]: x["status"] for x in after["results"]}
+    assert by == {"r_balances": "passed", "R_RATES": "failed"} and after["status"] == "failed"
+    assert (await client.get(f"/api/test-points/{rate_tp['id']}")).json()["baseline_version"] == 1
+    new_base = (await client.get(f"/api/test-points/{bal_tp['id']}")).json()
+    assert new_base["baseline_version"] == 2 and ["100100", "UK01", 2600.5] in new_base["baseline_rows"]
+
+    # 5. the next run on the same data passes r_balances against the updated baseline
+    again = await finish(client, (await client.post(f"/api/runs/{run['id']}/rerun")).json()["id"])
+    assert {x["sheet_name"]: x["status"] for x in again["results"]} == {"r_balances": "passed", "R_RATES": "failed"}

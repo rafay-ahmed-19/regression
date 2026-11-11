@@ -31,7 +31,7 @@ async def draft_view(draft: dict) -> dict:
 
 @router.post("/imports", status_code=201)
 async def create_import(files: list[UploadFile] = File(...), paths: list[str] = Form(default=[])):
-    """Upload a folder (one part per file, with its relative path) or a single zip of it."""
+    """Upload a folder (one part per file, with its relative path), a zip of it, or one Excel workbook."""
     blobs, total = {}, 0
     for i, f in enumerate(files):
         data = await f.read()
@@ -48,7 +48,11 @@ async def create_import(files: list[UploadFile] = File(...), paths: list[str] = 
             fallback_name = zip_name.rsplit("/", 1)[-1].rsplit(".", 1)[0]
         else:
             fallback_name = "Imported suite"
-        built = importer.build_from_folder(blobs)
+        # One Excel file on its own is a validation workbook, whatever it is called.
+        workbook = only if only.lower().endswith((".xls", ".xlsx")) and "/" not in only else ""
+        if workbook:
+            fallback_name = workbook.rsplit(".", 1)[0]
+        built = importer.build_from_folder(blobs, any_workbook=bool(workbook))
     except importer.ImportError_ as exc:
         raise HTTPException(400, str(exc))
     if not built["steps"]:

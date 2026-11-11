@@ -149,7 +149,9 @@ async def seed_demo() -> bool:
 
     step = timedelta(days=8.5) / len(HISTORY)
     for n, (sk, branch, impacted_only) in enumerate(HISTORY):
+        # Fixed ids keep the demo history, including which points look flaky, the same on every install.
         run = await runner.create_run(suite_ids[sk], branch, impacted_only, user="nightly",
-                                      started_at=start + step * (n + 1))
+                                      started_at=start + step * (n + 1),
+                                      run_id=str(uuid.uuid5(NAMESPACE, f"run:{n}")))
         await runner.execute_run(run["id"], live=False)
     return True

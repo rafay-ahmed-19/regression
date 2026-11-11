@@ -14,8 +14,23 @@ lets you either accept the change as the new baseline or treat it as a defect.
 - **There is no login.** Anyone who can open the app can use it, including the saved Oracle
   connections. When you change a baseline, you type your name and it is recorded.
 
-The app also has **simulated results** for trying things out without a database. They are made up
-and are always labelled **Simulated**.
+The app starts empty. You fill it by loading your own validation workbooks.
+
+## How it fits together
+
+1. **Load an Excel workbook once.** Every sheet whose name starts with `r` becomes a **test point**.
+   The SQL in row 1 is saved as that test point's query, row 2 gives the column names, and the rows
+   underneath are saved as its **baseline**, version 1. The workbook as a whole becomes a **suite**.
+2. **Run the suite against an Oracle database.** The Hub runs each test point's query there and
+   compares the rows that come back with that test point's baseline.
+3. **Deal with each difference.** If the new value is correct, accept it and it becomes the baseline
+   (version 2, 3, …). Each test point has its own baseline and is updated on its own. If the new
+   value is wrong, leave it failed: it is a defect.
+4. **Run again whenever you like**, on the same or another database. You do not load the Excel file
+   again; the Hub now holds the queries and the baselines.
+
+So the Excel file is only the starting point. After loading, the baseline lives in the Hub, with a
+record of every change made to it.
 
 To open the app, go to the address your team gave you (on your own computer: http://localhost:8000).
 
@@ -35,7 +50,7 @@ To open the app, go to the address your team gave you (on your own computer: htt
 
 ## The menu
 
-The dark bar on the left takes you to the seven areas of the app.
+The dark bar on the left takes you to the eight areas of the app.
 
 | Menu item | Use it to |
 | --- | --- |
@@ -45,6 +60,7 @@ The dark bar on the left takes you to the seven areas of the app.
 | Runs | Start runs and open their results |
 | Build A vs B | Compare two runs with each other |
 | Baselines | See who changed a baseline, and undo a change |
+| SQL workbench | Try a query on a database before or after saving it to a test point |
 | Connections | Add the Oracle databases that runs can query |
 
 ---
@@ -61,6 +77,8 @@ The dark bar on the left takes you to the seven areas of the app.
 - **Lowest pass rate** lists the test points that fail most often.
 - **Recent runs** lists the latest runs. Click a row to open it.
 
+On a new installation the dashboard is empty until the first run.
+
 ## 2. Suites
 
 ![Suites](images/suites.png)
@@ -72,18 +90,57 @@ Each card is one suite. From a card you can:
 - Use the two icons on the right to **duplicate** or **delete** it. Deleting a suite also deletes
   its test points, baselines and runs, and cannot be undone.
 
-### Import an existing build folder
+### Load an Excel workbook
 
-This is the quickest way to bring in a regression you already run from the Excel driver.
+This is how you create a suite with its test points and baselines.
 
-1. On the Suites page click **Import test folder**.
-2. Click **Choose folder** and pick the build folder, or **Choose zip** if you have it zipped.
-   To try it out, use `samples/loan_accrual.zip` from the app's folder.
-3. The Hub reads the folder and shows what it found.
+**How the workbook must be laid out.** For every sheet whose name starts with `r` (for example
+`r_balances`):
+
+| Row | Contains |
+| --- | --- |
+| Row 1 | The SQL query, in one cell |
+| Row 2 | The column headers |
+| Row 3 onwards | The expected result rows. These become the baseline. |
+
+Sheets with other names are ignored, so you can keep notes in the same file. Both `.xlsx` and
+`.xls` work, with up to 5,000 rows per sheet.
+
+**Steps**
+
+1. On the Suites page click **Import Excel or folder**.
+2. Click **Choose Excel file** and pick the workbook.
+
+![Import](images/import-start.png)
+
+3. The Hub lists the sheets it found, each with its number of columns and rows and a suggested key.
+   Click the arrow at the end of a row to see the SQL it read and a preview of the rows.
+
+![Excel review](images/import-excel.png)
+
+4. Check each sheet:
+   - **Looks right** means it can be loaded as is.
+   - A **red label** names a problem, for example *No SQL found* or *Duplicate column names*. Open
+     the row and correct the **SQL row** or **Header row** number if your layout differs.
+   - **Key columns** are the columns that identify a row (shown in blue). Click column names to
+     change them. Getting these right matters: rows are matched on them.
+   - Untick the box at the start of a row to leave a sheet out.
+5. Check the **Suite name**, then click **Create suite**. The button stays grey until every included
+   sheet looks right.
+
+Each included sheet is now a test point with its own SQL, and its rows are **version 1** of its
+baseline. A load that you start but do not finish is discarded after 24 hours.
+
+**Numbers and text.** Excel often turns codes such as `100100` into numbers, while Oracle returns
+them as text. The Hub treats a number and the same number written as text as equal, so this does
+not cause false failures.
+
+### Load a whole build folder
+
+If you have a build folder from the Excel driver, choose **Choose folder** (or **Choose zip**)
+instead. To try it, use `samples/loan_accrual.zip` from the app's folder.
 
 ![Import review](images/import-review.png)
-
-What the Hub does with each item in the folder:
 
 | In the folder | Becomes |
 | --- | --- |
@@ -92,19 +149,8 @@ What the Hub does with each item in the folder:
 | A `.properties` file | A run-job step |
 | An `o_validation` Excel workbook | A validate step; every sheet whose name starts with `r` becomes a test point |
 
-The number at the start of each name (`10.`, `20.`, …) sets the order of the steps.
-
-4. Check the list of sheets. Each one shows its columns, rows and suggested key.
-   - **Looks right** means it can be imported as is.
-   - A **red label** names a problem, for example *No SQL found* or *Duplicate column names*.
-     Click the arrow at the end of the row to fix it: change the **SQL row** or **Header row**
-     number, or click column names to choose the **key columns**.
-   - Untick the box at the start of a row to leave that sheet out.
-5. Check the **Suite name**, then click **Create suite**. The button stays grey until every
-   included sheet looks right.
-
-The expected rows in each sheet become **version 1** of that test point's baseline. An import that
-you start but do not finish is discarded after 24 hours.
+The number at the start of each name (`10.`, `20.`, …) sets the order of the steps. The steps are
+kept for reference; on an Oracle run only the checks are carried out.
 
 ### Edit a suite
 
@@ -200,7 +246,7 @@ Things to know about the SQL:
 ### Trying it without a database
 
 In **Results from**, choose **Simulated results (demo)** and pick a branch. Nothing is queried; the
-results are made up so that you can practise. With **Run only impacted tests** switched on, only the
+results are made up from the baseline so that you can practise. They are always labelled **Simulated**. With **Run only impacted tests** switched on, only the
 test points linked to the files changed on that branch run.
 
 ![Simulated run](images/new-run-simulated.png)
@@ -230,7 +276,7 @@ wrong. Click it to read Oracle's message. The other test points are not affected
 
 ![Query error](images/query-error.png)
 
-Fix the SQL in the **Catalogue** (pencil icon on the test point), or fix the database, then use
+Click **Open SQL in workbench** to correct and test the query (see section 11), save it, then use
 **Run again**. An error is not a difference, so there is nothing to accept.
 
 ### If the whole run stopped
@@ -287,6 +333,9 @@ You can accept at four levels:
 | One row | **Accept row** at the end of that row |
 | A whole test point | **Accept test point** at the top right of the detail |
 | Every failure in the run | **Accept all failures** at the top of the page |
+
+Accepting changes only the baseline of the test point you are working on (or, with **Accept all
+failures**, each failed test point in the run). Other test points keep their baselines.
 
 Each time, a dialog asks for **your name** and a **reason**. Both are required and are kept
 permanently in the baseline history.
@@ -350,13 +399,36 @@ database compares with the baseline.
 Use the **Build A** and **Build B** boxes at the top to pick any two runs of the same suite. The
 comparison appears straight away; nothing is run again.
 
-## 11. Reports for sign-off
+## 11. SQL workbench: try a query
+
+Use the workbench to check what a query returns on a database, or to fix a test point's SQL.
+
+![SQL workbench](images/workbench.png)
+
+1. Open **SQL workbench**.
+2. Choose the **Database**.
+3. Type or paste a query. To start from an existing test point, pick it in **Load SQL from a test point**.
+4. Click **Run query** (or press Ctrl + Enter). The rows appear underneath, with the row count and
+   how long the query took.
+
+Good to know:
+
+- Only `SELECT` and `WITH` queries are run. Anything else is refused and never sent to the database.
+- **Show up to** limits how many rows are displayed (500 by default, 5,000 at most). The message
+  says when more rows exist.
+- If Oracle rejects the query, its message is shown in red.
+- When you loaded a test point and changed the query, **Save SQL to …** stores your version on that
+  test point. The next run uses it. A yellow note warns you if the query returns different columns
+  from the ones the test point expects.
+- Nothing in the workbench changes a baseline. To update a baseline, start a run and accept the result.
+
+## 12. Reports for sign-off
 
 Open a finished run and click **PDF** or **Excel** at the top right. The report names the database
 the results came from, lists failures first, includes the differences, and ends with a sign-off
 block for a name, role and date.
 
-## 12. Other things you can do with runs
+## 13. Other things you can do with runs
 
 On the **Runs** page:
 
@@ -377,11 +449,20 @@ The computer running the Hub cannot see the database. Connect the VPN, go to **C
 **Test** on that connection, and when it turns green use **Run again** on the run.
 
 **A test point shows Error instead of Passed or Failed.**
-Oracle could not run its query. Click the test point to read the message, fix the SQL in the
-Catalogue, and run again.
+Oracle could not run its query. Click the test point to read the message, open the SQL in the
+workbench, fix and save it, and run again.
 
 **My query uses `:cob_date` and fails with a "not all variables bound" error.**
 The Hub does not fill in placeholders. Edit the test point's SQL and write the value in.
+
+**Do I load the Excel file for every run?**
+No. Load it once. The Hub keeps each sheet's query and baseline, and every later run compares
+against the stored baseline. Loading the same workbook again would create a second suite, and the
+Hub asks for a different name.
+
+**The expected values in my Excel file were wrong.**
+Run the suite against a database you trust, check the differences, and accept them. The accepted
+rows become the baseline, and the change is recorded with your name and reason.
 
 **A brand new test point fails on its first run.**
 If you created it by hand without pasting expected rows, its first baseline is only sample data.
