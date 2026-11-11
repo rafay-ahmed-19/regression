@@ -1,18 +1,24 @@
 """Baseline change log and rollback (FR-28)."""
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from ..db import db
 from ..schemas import RollbackIn
 from ..services import baselines as service
+from ..services import rowstore
 from ..services.compare import compare
 
 router = APIRouter(tags=["baselines"])
-LIST = {"_id": 0, "before_rows": 0, "after_rows": 0}
+LIST = {"_id": 0, "before_id": 0, "after_id": 0}
+MAX_DIFFS = 1000
 
 
 @router.get("/baseline-history")
-async def list_history(test_point_id: str = "", suite_id: str = "", limit: int = 300):
+async def list_history(test_point_id: str = "", suite_id: str = "", user: str = "", limit: int = 300):
     query = {}
+    if user:
+        query["user"] = user
     if test_point_id:
         query["test_point_id"] = test_point_id
     if suite_id:
@@ -32,18 +38,24 @@ async def get_history_entry(history_id: str):
     if not entry:
         raise HTTPException(404, "Baseline change not found")
     tp = await db.test_points.find_one({"id": entry["test_point_id"]}, {"_id": 0}) or {}
-    columns = tp.get("columns") or [f"COL{i + 1}" for i in range(len((entry["after_rows"] or [[]])[0]))]
+    before, after = await rowstore.get(entry.pop("before_id")), await rowstore.get(entry.pop("after_id"))
+    columns = tp.get("columns") or [f"COL{i + 1}" for i in range(len((after or before or [[]])[0]))]
     keys = tp.get("key_columns", [])
-    before, after = entry.pop("before_rows"), entry.pop("after_rows")
-    diff = compare(columns, keys, before, after)
+    diff = await asyncio.to_thread(compare, columns, keys, before, after)
     latest = await service.latest_entry_ids([entry["test_point_id"]])
-    return {**entry, "columns": columns, "key_columns": keys, "diffs": diff["diffs"][:1000],
-            "before_count": len(before), "after_count": len(after),
+    return {**entry, "columns": columns, "key_columns": keys, "diffs": diff["diffs"][:MAX_DIFFS],
+            "diff_count": len(diff["diffs"]), "before_count": len(before), "after_count": len(after),
             "can_roll_back": bool(tp) and service.can_roll_back(entry, latest)}
 
 
 @router.post("/baseline-history/{history_id}/rollback")
 async def roll_back(history_id: str, body: RollbackIn):
     entry = await service.roll_back(history_id, body.user.strip(), body.reason.strip())
-    entry.pop("before_rows"), entry.pop("after_rows")
+    entry.pop("before_id"), entry.pop("after_id")
     return entry
+
+
+@router.get("/baseline-users")
+async def baseline_users():
+    """Everyone who has changed a baseline, for the "changed by" filter."""
+    return sorted(await db.baseline_history.distinct("user"))

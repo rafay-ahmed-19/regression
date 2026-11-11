@@ -29,7 +29,7 @@ the build has already run, or simulated for demos.
 | Versioned baselines, accept at cell / row / test point / run level, audit, rollback | Run detail, Baselines | FR-25 to FR-29 |
 | Dashboard KPIs, PDF and Excel sign-off reports | Dashboard, run detail | FR-30, FR-31 |
 | Oracle connections; runs that execute each test point's SQL on a chosen database; two databases compared with each other | Connections, New run, Build A vs B | FR-33 to FR-36 |
-| SQL workbench for trying queries on a chosen database | SQL workbench | FR-37 |
+| SQL workbench for trying queries on a chosen database, with CSV export | SQL workbench | FR-37 |
 
 Not built yet, as planned in the requirements: per-column ignore rules (FR-19), notifications and
 schedules (FR-32), login and roles, and build execution through an on-prem runner (Phases 2 and 3).
@@ -53,7 +53,7 @@ for example with the company VPN connected.
 - **The Hub does not execute builds.** It only queries a database where the build has already run.
 - Only `SELECT` and `WITH ... SELECT` statements are run. Values must be written into the SQL;
   bind variables such as `:cob_date` are not filled in.
-- Results are compared up to 5,000 rows per test point.
+- Results are compared up to 100,000 rows per test point; a query returning more is reported as an error.
 - **Oracle passwords are stored in MongoDB in plain text.** The API never returns them, but anyone
   with access to the database can read them. Use a read-only Oracle account and restrict access to MongoDB.
 - Databases that require Oracle Native Network Encryption are not supported by thin mode.
@@ -139,6 +139,7 @@ backend/
       oracle.py        run a test point's SQL on Oracle and normalise the rows
       simulator.py     simulated branches, build steps and results
       baselines.py     versioned baselines, audit trail, rollback
+      rowstore.py      chunked, compressed storage for rows and differences
       stats.py         pass rates, history, flaky detection
       ai.py            failure analysis prompt and streaming
       reports.py       PDF and Excel export
@@ -154,7 +155,23 @@ frontend/
 
 MongoDB collections: `suites`, `suite_files`, `test_points`, `baselines`, `baseline_history`,
 `runs`, `run_results`, `oracle_connections`, `import_drafts`, `import_sheets` (the last two expire
-after 24 hours) and `oracle_sim`, which holds the rows used by simulated runs.
+after 24 hours), `oracle_sim` for simulated runs, and `blobs` / `blob_chunks`, which hold the rows.
+
+### How large results are handled
+
+A test point can hold up to 100,000 rows. Rows and differences are not stored inside the run,
+baseline or history documents. They go to the row store (`services/rowstore.py`): each list is cut
+into chunks of compressed JSON, so no document comes near MongoDB's 16 MB limit, and a list's id is
+the hash of its content, so identical data is stored once. A baseline, the expected side of every
+run compared with it, and the result that was accepted to create it all point at the same rows.
+
+The API never sends a whole result. The failure view loads counts and a per-column summary first,
+then pages of rows and differences as you scroll; type and column filters run on the server.
+Comparison is a single pass over each side (about a third of a second for 100,000 rows) and runs,
+with compression and Oracle value conversion, off the server's event loop.
+
+Data written by earlier versions, which kept rows inside documents, is moved to the row store
+automatically at start-up.
 
 ## Tests
 

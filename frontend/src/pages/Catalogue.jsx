@@ -130,7 +130,14 @@ export default function Catalogue() {
                   </TableCell>
                   <TableCell>{t.owner || <Typography variant="caption" color="text.secondary">unassigned</Typography>}</TableCell>
                   <TableCell align="right"><Mono>{t.tolerance || 0}</Mono></TableCell>
-                  <TableCell><Link component={RouterLink} to={`/baselines?test_point=${t.id}`} underline="hover"><Mono>v{t.baseline_version}</Mono></Link></TableCell>
+                  <TableCell>
+                    <Tooltip title="Open this test point's version history">
+                      <Link component={RouterLink} to={`/baselines?test_point=${t.id}`} underline="hover"><Mono>v{t.baseline_version}</Mono></Link>
+                    </Tooltip>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", whiteSpace: "nowrap" }}>
+                      {t.baseline_rows.toLocaleString()} rows{t.baseline_updated_by ? ` · ${t.baseline_updated_by}` : ""}
+                    </Typography>
+                  </TableCell>
                   <TableCell>
                     {t.last_status ? (
                       <Link component={RouterLink} to={`/runs/${t.last_run_id}?tp=${t.id}`} aria-label={`Last result of ${t.sheet_name}: ${t.last_status}`}><StatusChip status={t.last_status} sx={{ cursor: "pointer" }} /></Link>

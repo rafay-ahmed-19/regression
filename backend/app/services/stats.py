@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from ..db import db
 
-RESULT_SUMMARY = {"_id": 0, "expected_rows": 0, "actual_rows": 0, "diffs": 0, "sql": 0, "ai_explanation": 0}
+RESULT_SUMMARY = {"_id": 0, "sql": 0, "ai_explanation": 0, "expected_id": 0, "actual_id": 0, "diffs_id": 0}
 FINISHED = ("passed", "failed")
 
 

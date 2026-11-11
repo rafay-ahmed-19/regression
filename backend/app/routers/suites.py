@@ -9,7 +9,8 @@ from fastapi.responses import Response
 
 from ..db import NO_ID, db, iso
 from ..schemas import SuiteIn
-from ..services.baselines import get_baseline, write_baseline
+from ..services import rowstore
+from ..services.baselines import baseline_rows, write_baseline
 
 router = APIRouter(tags=["suites"])
 MAX_INPUT_BYTES = 12 * 1024 * 1024
@@ -38,10 +39,16 @@ def _steps(body: SuiteIn) -> list[dict]:
 
 async def delete_test_point_data(test_point_ids: list[str]):
     q = {"test_point_id": {"$in": test_point_ids}}
+    stored = []
+    for collection, fields in (("baselines", ["rows_id"]), ("baseline_history", ["before_id", "after_id"]),
+                               ("oracle_sim", ["rows_id"])):
+        for doc in await db[collection].find(q, {"_id": 0, **dict.fromkeys(fields, 1)}).to_list(None):
+            stored += [v for v in doc.values() if v]
     await db.baselines.delete_many(q)
     await db.baseline_history.delete_many(q)
     await db.oracle_sim.delete_many(q)
     await db.test_points.delete_many({"id": {"$in": test_point_ids}})
+    await rowstore.release(stored)
 
 
 @router.get("/suites")
@@ -96,9 +103,13 @@ async def delete_suite(suite_id: str):
         raise HTTPException(409, "A run of this suite is still in progress")
     tp_ids = [t["id"] for t in await db.test_points.find({"suite_id": suite_id}, {"_id": 0, "id": 1}).to_list(None)]
     run_ids = [r["id"] for r in await db.runs.find({"suite_id": suite_id}, {"_id": 0, "id": 1}).to_list(None)]
-    await delete_test_point_data(tp_ids)
+    stored = [v for r in await db.run_results.find(
+        {"run_id": {"$in": run_ids}}, {"_id": 0, "expected_id": 1, "actual_id": 1, "diffs_id": 1}).to_list(None)
+        for v in r.values() if v]
     await db.run_results.delete_many({"run_id": {"$in": run_ids}})
     await db.runs.delete_many({"suite_id": suite_id})
+    await delete_test_point_data(tp_ids)
+    await rowstore.release(stored)
     await db.suite_files.delete_many({"suite_id": suite_id})
     await db.suites.delete_one({"id": suite_id})
 
@@ -122,7 +133,7 @@ async def duplicate_suite(suite_id: str):
         sim = await db.oracle_sim.find_one({"test_point_id": tp["id"]}, NO_ID)
         if sim:
             await db.oracle_sim.insert_one({**sim, "test_point_id": new["id"]})
-        await write_baseline(new, (await get_baseline(tp["id"]))["rows"], action="create", scope="initial",
+        await write_baseline(new, await baseline_rows(tp["id"]), action="create", scope="initial",
                              user="system", reason=f"Copied from suite '{src['name']}'")
     return copy
 

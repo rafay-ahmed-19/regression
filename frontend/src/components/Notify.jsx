@@ -15,7 +15,7 @@ export function NotifyProvider({ children }) {
       <Snackbar
         key={note?.key}
         open={!!note}
-        autoHideDuration={note?.severity === "error" ? 8000 : 3500}
+        autoHideDuration={note?.severity === "success" ? 3500 : 8000}
         onClose={(_, reason) => reason !== "clickaway" && setNote(null)}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >

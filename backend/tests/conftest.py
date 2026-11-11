@@ -44,3 +44,17 @@ async def run_suite(client, suite_name, branch, **extra):
     r = await client.post("/api/runs", json={"suite_id": suite["id"], "branch": branch, **extra})
     assert r.status_code == 201, r.text
     return await finish(client, r.json()["id"])
+
+
+async def full_result(client, run_id, test_point_id):
+    """A result with its rows and differences, gathered from the paged endpoints."""
+    base = f"/api/runs/{run_id}/results/{test_point_id}"
+    res = (await client.get(base)).json()
+    res["diffs"] = (await client.get(f"{base}/diffs?limit=5000")).json()["items"]
+    for side in ("actual", "expected"):
+        res[f"{side}_rows"] = (await client.get(f"{base}/rows?side={side}&limit=5000")).json()["rows"]
+    return res
+
+
+async def baseline(client, test_point_id):
+    return (await client.get(f"/api/test-points/{test_point_id}/baseline?limit=5000")).json()["rows"]

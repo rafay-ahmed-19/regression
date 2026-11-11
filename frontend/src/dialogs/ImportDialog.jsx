@@ -9,7 +9,7 @@ import ExpandLess from "@mui/icons-material/ExpandLess";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import FolderOpenOutlined from "@mui/icons-material/FolderOpenOutlined";
 import FolderZipOutlined from "@mui/icons-material/FolderZipOutlined";
-import { api } from "../api.js";
+import { api, getUser, setUser } from "../api.js";
 import { Mono } from "../components/Common.jsx";
 import { DataTable } from "../components/grids.jsx";
 import { useNotify } from "../components/Notify.jsx";
@@ -110,7 +110,7 @@ export default function ImportDialog({ open, onClose }) {
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({ name: "", build_folder: "", description: "" });
+  const [form, setForm] = useState({ name: "", build_folder: "", description: "", user: "" });
 
   const reset = () => {
     setDraft(null);
@@ -135,7 +135,7 @@ export default function ImportDialog({ open, onClose }) {
       }
       const d = await api("/imports", { method: "POST", form: data });
       setDraft(d);
-      setForm({ name: d.name, build_folder: d.build_folder, description: "" });
+      setForm({ name: d.name, build_folder: d.build_folder, description: "", user: getUser() });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -153,6 +153,7 @@ export default function ImportDialog({ open, onClose }) {
   const commit = async () => {
     setBusy(true);
     try {
+      setUser(form.user);
       const out = await api(`/imports/${draft.id}/commit`, { method: "POST", body: form });
       notify(`Suite ${out.suite.name} created with ${plural(out.steps, "step")} and ${plural(out.test_points, "test point")}`);
       reset();
@@ -195,6 +196,7 @@ export default function ImportDialog({ open, onClose }) {
             <Stack direction="row" sx={{ gap: 1.5 }}>
               <TextField label="Suite name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required sx={{ flex: 1 }} />
               <TextField label="Build folder path in the repo" value={form.build_folder} onChange={(e) => setForm({ ...form, build_folder: e.target.value })} sx={{ flex: 1 }} />
+              <TextField label="Your name" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} required sx={{ width: 180 }} helperText="Recorded on baseline v1" />
             </Stack>
             {draft.warnings.map((w) => <Alert key={w} severity="warning">{w}</Alert>)}
             <Box>
@@ -241,7 +243,7 @@ export default function ImportDialog({ open, onClose }) {
         {draft && (
           <Tooltip title={flagged ? "Correct or exclude the flagged sheets first" : included.length === 0 && draft.sheets.length ? "Include at least one sheet" : ""}>
             <span>
-              <Button variant="contained" onClick={commit} disabled={busy || !form.name.trim() || (draft.sheets.length > 0 && !draft.ready)}>
+              <Button variant="contained" onClick={commit} disabled={busy || !form.name.trim() || !form.user.trim() || (draft.sheets.length > 0 && !draft.ready)}>
                 Create suite
               </Button>
             </span>

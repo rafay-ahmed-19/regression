@@ -56,6 +56,8 @@ class TestPointIn(TestPointBase):
     checkpoint_id: str | None = None
     # Expected rows that seed baseline v1. When omitted, sample rows are generated.
     rows: list[list[Any]] | None = None
+    # Who is creating it; recorded on baseline v1.
+    user: str = ""
 
 
 class TestPointUpdate(TestPointBase):
@@ -123,6 +125,10 @@ class QueryIn(BaseModel):
     max_rows: int = Field(default=500, ge=1, le=5000)
 
 
+class ExportIn(BaseModel):
+    sql: str = Field(min_length=1, max_length=200_000)
+
+
 class OracleConnectionTest(OracleConnectionIn):
     # Test an edited connection with its saved password when none is typed.
     id: str | None = None
@@ -158,3 +164,5 @@ class ImportCommit(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     build_folder: str = ""
     description: str = ""
+    # Who is loading it; recorded on baseline v1 of every test point.
+    user: str = ""

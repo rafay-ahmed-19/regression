@@ -10,9 +10,9 @@ from fastapi import HTTPException
 
 from ..config import get_settings
 from ..db import NO_ID, db, iso, now
-from . import oracle, simulator
+from . import oracle, rowstore, simulator
 from .baselines import get_baseline
-from .compare import compare
+from .compare import compare, summarize
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +85,8 @@ async def create_run(suite_id: str, branch_name: str, impacted_only: bool = Fals
         "module": t.get("module", ""), "sql": t.get("sql", ""), "columns": t["columns"],
         "key_columns": t.get("key_columns", []), "tolerance": t.get("tolerance", 0),
         "checkpoint_id": t["checkpoint_id"] if t.get("checkpoint_id") in checkpoints else fallback["id"],
-        "status": "queued", "expected_rows": [], "actual_rows": [], "diffs": [], "diff_count": 0, "matched": 0,
+        "status": "queued", "expected_id": None, "actual_id": None, "diffs_id": None, "diff_summary": None,
+        "diff_count": 0, "matched": 0,
         "expected_count": 0, "actual_count": 0, "baseline_version": 0, "duration_ms": None,
         "ai_explanation": None, "error": None,
     } for t in tps]
@@ -113,13 +114,23 @@ async def _compare_result(run: dict, result: dict, connection: dict | None) -> d
     if connection:
         actual = await oracle.query(connection, result["sql"], result["columns"])
     else:
-        sim = await db.oracle_sim.find_one({"test_point_id": tid}, NO_ID) or {"rows": [], "flaky": False}
-        actual = simulator.simulate_actual(tp, sim["rows"], sim.get("flaky", False), run["branch"], run["id"])
+        sim = await db.oracle_sim.find_one({"test_point_id": tid}, NO_ID) or {"rows_id": None, "flaky": False}
+        actual = simulator.simulate_actual(tp, await rowstore.get(sim.get("rows_id")), sim.get("flaky", False),
+                                           run["branch"], run["id"])
     baseline = await get_baseline(tid)
-    out = compare(result["columns"], result["key_columns"], baseline["rows"], actual, result["tolerance"])
+    return await diff_and_store(result, await rowstore.get(baseline["rows_id"]), actual, baseline)
+
+
+async def diff_and_store(result: dict, expected: list[list], actual: list[list], baseline: dict,
+                         actual_id: str | None = None) -> dict:
+    """Compare off the event loop and keep rows and differences in the row store."""
+    out = await asyncio.to_thread(compare, result["columns"], result["key_columns"], expected, actual,
+                                  result["tolerance"])
+    summary = await asyncio.to_thread(summarize, result["columns"], out["diffs"])
     return {
-        "status": "failed" if out["diffs"] else "passed", "expected_rows": baseline["rows"], "actual_rows": actual,
-        "diffs": out["diffs"], "diff_count": len(out["diffs"]), "matched": out["matched"],
+        "status": "failed" if out["diffs"] else "passed", "expected_id": baseline["rows_id"],
+        "actual_id": actual_id or await rowstore.put(actual), "diffs_id": await rowstore.put(out["diffs"]),
+        "diff_summary": summary, "diff_count": len(out["diffs"]), "matched": out["matched"],
         "expected_count": out["expected_count"], "actual_count": out["actual_count"],
         "baseline_version": baseline["version"],
     }
@@ -159,8 +170,7 @@ async def execute_run(run_id: str, live: bool = True):
             if not connection:
                 raise RuntimeError("The Oracle connection used by this run has been deleted")
             await oracle.check(connection)  # fail the run early when the database cannot be reached
-        results = await db.run_results.find({"run_id": run_id}, {"_id": 0, "expected_rows": 0, "actual_rows": 0,
-                                                                 "diffs": 0}).to_list(None)
+        results = await db.run_results.find({"run_id": run_id}, NO_ID).to_list(None)
         gate = asyncio.Semaphore(PARALLEL_QUERIES)
 
         async def run_point(result):
@@ -241,14 +251,17 @@ async def finalize_run(run_id: str) -> dict:
     return update
 
 
-async def recompare_result(run_id: str, test_point_id: str, baseline: dict) -> None:
-    """Re-compare a stored result after its baseline changed (FR-29)."""
-    r = await db.run_results.find_one({"run_id": run_id, "test_point_id": test_point_id}, NO_ID)
-    out = compare(r["columns"], r["key_columns"], baseline["rows"], r["actual_rows"], r["tolerance"])
-    await db.run_results.update_one({"run_id": run_id, "test_point_id": test_point_id}, {"$set": {
-        "status": "failed" if out["diffs"] else "passed", "expected_rows": baseline["rows"], "diffs": out["diffs"],
-        "diff_count": len(out["diffs"]), "matched": out["matched"], "expected_count": out["expected_count"],
-        "baseline_version": baseline["version"], "ai_explanation": None}})
+async def recompare_result(result: dict, baseline_rows: list[list], actual: list[list], baseline: dict) -> None:
+    """Re-compare a stored result after its baseline changed (FR-29).
+
+    `baseline` carries the new `version` and `rows_id`; the rows are passed in because the
+    caller has them loaded already.
+    """
+    old_diffs = result.get("diffs_id")
+    outcome = await diff_and_store(result, baseline_rows, actual, baseline, actual_id=result["actual_id"])
+    await db.run_results.update_one({"run_id": result["run_id"], "test_point_id": result["test_point_id"]},
+                                    {"$set": {**outcome, "ai_explanation": None}})
+    await rowstore.release([old_diffs, result.get("expected_id")])
 
 
 async def recover_interrupted():

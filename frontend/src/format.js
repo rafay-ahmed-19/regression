@@ -35,7 +35,7 @@ export const runSource = (run) => (run.mode === "oracle" ? `Oracle · ${run.conn
 /** "branch @ commit", without the commit for Oracle runs that have none. */
 export const runBuild = (run) => (run.commit ? `${run.branch} @ ${run.commit}` : run.branch);
 
-export const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + "s"}`;
+export const plural = (n, word, many) => `${Number(n).toLocaleString()} ${n === 1 ? word : many || word + "s"}`;
 
 export const STEP_TYPES = {
   setup_sql: "Setup SQL",

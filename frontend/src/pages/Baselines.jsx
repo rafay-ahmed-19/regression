@@ -41,7 +41,10 @@ function EntryDialog({ id, onClose, onRollback }) {
             <Box><Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>Reason</Typography><Typography>{data.reason}</Typography></Box>
             {data.run_id && <Link component={RouterLink} to={`/runs/${data.run_id}?tp=${data.test_point_id}`} underline="hover">Open the run this came from</Link>}
             {data.diffs.length === 0 ? <Typography color="text.secondary">{data.previous_version === 0 ? `First version: ${plural(data.after_count, "row")} stored.` : "No rows differ between the two versions."}</Typography> : (
-              <DiffGrid columns={data.columns} keyColumns={data.key_columns} diffs={data.diffs} sides={["Before", "After"]} height={380} />
+              <>
+                {data.diff_count > data.diffs.length && <Typography variant="caption" color="text.secondary">Showing the first {data.diffs.length.toLocaleString()} of {data.diff_count.toLocaleString()} changed rows.</Typography>}
+                <DiffGrid columns={data.columns} keyColumns={data.key_columns} diffs={data.diffs} sides={["Before", "After"]} height={380} />
+              </>
             )}
           </Stack>
         )}
@@ -58,7 +61,9 @@ export default function Baselines() {
   const [params, setParams] = useSearchParams();
   const testPoint = params.get("test_point") || "";
   const suite = params.get("suite") || "";
-  const query = new URLSearchParams({ test_point_id: testPoint, suite_id: suite }).toString();
+  const user = params.get("user") || "";
+  const users = useFetch("/baseline-users");
+  const query = new URLSearchParams({ test_point_id: testPoint, suite_id: suite, user }).toString();
   const { data, error, loading, reload } = useFetch(`/baseline-history?${query}`);
   const suites = useFetch("/suites");
   const points = useFetch(`/test-points?suite_id=${suite}`);
@@ -66,13 +71,13 @@ export default function Baselines() {
   const [rollback, setRollback] = useState(null);
   const notify = useNotify();
   const set = (patch) => {
-    const next = { suite, test_point: testPoint, ...patch };
+    const next = { suite, test_point: testPoint, user, ...patch };
     setParams(Object.fromEntries(Object.entries(next).filter(([, v]) => v)), { replace: true });
   };
 
   return (
     <>
-      <PageHeader title="Baselines" />
+      <PageHeader title="Baselines" subtitle="Every version of every baseline: who changed it, when and why." />
       <Stack direction="row" sx={{ gap: 1.5, mb: 1.5, alignItems: "center" }}>
         <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suite) ? suite : ""} onChange={(e) => set({ suite: e.target.value, test_point: "" })} sx={{ width: 220 }}>
           <MenuItem value="">All suites</MenuItem>
@@ -81,6 +86,10 @@ export default function Baselines() {
         <TextField select label="Test point" value={(points.data?.items || []).some((t) => t.id === testPoint) ? testPoint : ""} onChange={(e) => set({ test_point: e.target.value })} sx={{ width: 240 }}>
           <MenuItem value="">All test points</MenuItem>
           {(points.data?.items || []).map((t) => <MenuItem key={t.id} value={t.id}>{t.sheet_name}</MenuItem>)}
+        </TextField>
+        <TextField select label="Changed by" value={(users.data || []).includes(user) ? user : ""} onChange={(e) => set({ user: e.target.value })} sx={{ width: 180 }}>
+          <MenuItem value="">Anyone</MenuItem>
+          {(users.data || []).map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
         </TextField>
         <Typography color="text.secondary">{plural(data?.length || 0, "change")}</Typography>
       </Stack>
@@ -92,7 +101,7 @@ export default function Baselines() {
             <TableHead>
               <TableRow>
                 <TableCell>When</TableCell><TableCell>Test point</TableCell><TableCell>Change</TableCell><TableCell>Scope</TableCell><TableCell>Version</TableCell>
-                <TableCell align="right">Rows</TableCell><TableCell>By</TableCell><TableCell>Reason</TableCell><TableCell />
+                <TableCell align="right">Rows changed</TableCell><TableCell>Changed by</TableCell><TableCell>Reason</TableCell><TableCell />
               </TableRow>
             </TableHead>
             <TableBody>
@@ -107,7 +116,7 @@ export default function Baselines() {
                   </TableCell>
                   <TableCell><Mono>v{h.version}</Mono></TableCell>
                   <TableCell align="right">{h.rows_changed}</TableCell>
-                  <TableCell>{h.user}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{h.user}</TableCell>
                   <TableCell sx={{ minWidth: 160 }}>{h.reason}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
                     <Button onClick={() => setOpen(h.id)}>View</Button>

@@ -7,7 +7,7 @@ import pytest
 from app.db import db
 from app.services import oracle
 
-from .conftest import finish
+from .conftest import baseline, finish, full_result
 
 CONN = {"name": "UAT", "host": "ora-uat.internal", "port": 1521, "service_name": "EVOLV", "user": "reg", "password": "s3cret"}
 
@@ -201,7 +201,7 @@ async def test_oracle_run_executes_sql_and_compares_with_baseline(client, fake):
 
     by = {x["sheet_name"]: x for x in run["results"]}
     assert by["r_bal"]["status"] == "passed"
-    res = (await client.get(f"/api/runs/{run['id']}/results/{by['r_int']['test_point_id']}")).json()
+    res = await full_result(client, run['id'], by['r_int']['test_point_id'])
     assert res["actual_rows"] == [["a", 1.5], ["b", 2.25], ["c", 9]]
     assert {d["key"]: d["type"] for d in res["diffs"]} == {"b": "modified", "c": "extra"}
 
@@ -242,11 +242,11 @@ async def test_one_failing_query_does_not_stop_the_others(client, fake):
 async def test_wrong_columns_non_query_and_too_many_rows_are_errors(client, fake):
     suite, conn = await make_suite(client), await make_conn(client)
     fake.tables["ln_bal"] = (["ID", "AMOUNT", "CCY"], [("a", 1.5, "USD")])
-    fake.tables["ln_int"] = (["ID", "AMOUNT"], [(str(i), i) for i in range(5001)])
+    fake.tables["ln_int"] = (["ID", "AMOUNT"], [(str(i), i) for i in range(100_001)])
     tps = (await client.get("/api/test-points")).json()["items"]
     run = await finish(client, (await client.post("/api/runs", json={"suite_id": suite["id"], "connection_id": conn["id"]})).json()["id"])
     by = {x["sheet_name"]: x for x in run["results"]}
-    assert "returned 3 columns" in by["r_bal"]["error"] and "more than 5,000 rows" in by["r_int"]["error"]
+    assert "returned 3 columns" in by["r_bal"]["error"] and "more than 100,000 rows" in by["r_int"]["error"]
     assert run["errors"] == 2 and run["status"] == "failed"
 
     await client.put(f"/api/test-points/{tps[0]['id']}", json={"sql": "delete from ln_bal"})
@@ -361,9 +361,9 @@ async def test_excel_workbook_becomes_baseline_then_oracle_run_compares_and_upda
     bal_tp = (await client.get(f"/api/test-points/{tps['r_balances']['id']}")).json()
     assert bal_tp["sql"].startswith("SELECT account, entity, balance FROM gl_bal")
     assert bal_tp["columns"] == ["ACCOUNT", "ENTITY", "BALANCE"] and bal_tp["baseline_version"] == 1
-    assert bal_tp["baseline_rows"] == [[100100, "UK01", 2500.5], [100100, "US02", 10], [210000, "UK01", -75.25]]
+    assert await baseline(client, bal_tp["id"]) == [[100100, "UK01", 2500.5], [100100, "US02", 10], [210000, "UK01", -75.25]]
     rate_tp = (await client.get(f"/api/test-points/{tps['R_RATES']['id']}")).json()
-    assert rate_tp["sql"] == "select ccy, rate from fx_rates" and rate_tp["baseline_rows"] == [["EUR", 1.0842], ["GBP", 1.2719]]
+    assert rate_tp["sql"] == "select ccy, rate from fx_rates" and await baseline(client, rate_tp["id"]) == [["EUR", 1.0842], ["GBP", 1.2719]]
 
     # 3. run on Oracle. Oracle returns account as text and numbers as Decimal, in another order:
     #    that must not count as a difference. One balance and one rate really changed.
@@ -375,7 +375,7 @@ async def test_excel_workbook_becomes_baseline_then_oracle_run_compares_and_upda
     run = await finish(client, (await client.post("/api/runs", json={"suite_id": done.json()["suite"]["id"], "connection_id": conn["id"]})).json()["id"])
     assert (run["status"], run["failed"], run["errors"]) == ("failed", 2, 0)
     assert fake.executed[-2:] and any("gl_bal" in s for s in fake.executed) and any("fx_rates" in s for s in fake.executed)
-    res = (await client.get(f"/api/runs/{run['id']}/results/{bal_tp['id']}")).json()
+    res = await full_result(client, run['id'], bal_tp['id'])
     assert res["matched"] == 2 and [(d["key"], d["type"], d["cells"]) for d in res["diffs"]] == [("100100 | UK01", "modified", ["BALANCE"])]
 
     # 4. update one test point's baseline with the actual result; the other stays as it was
@@ -387,7 +387,8 @@ async def test_excel_workbook_becomes_baseline_then_oracle_run_compares_and_upda
     assert by == {"r_balances": "passed", "R_RATES": "failed"} and after["status"] == "failed"
     assert (await client.get(f"/api/test-points/{rate_tp['id']}")).json()["baseline_version"] == 1
     new_base = (await client.get(f"/api/test-points/{bal_tp['id']}")).json()
-    assert new_base["baseline_version"] == 2 and ["100100", "UK01", 2600.5] in new_base["baseline_rows"]
+    assert new_base["baseline_version"] == 2 and new_base["baseline_updated_by"] == "rafay"
+    assert ["100100", "UK01", 2600.5] in await baseline(client, bal_tp["id"])
 
     # 5. the next run on the same data passes r_balances against the updated baseline
     again = await finish(client, (await client.post(f"/api/runs/{run['id']}/rerun")).json()["id"])

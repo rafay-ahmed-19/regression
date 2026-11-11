@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField, Typography,
 } from "@mui/material";
-import { api, useFetch } from "../api.js";
+import { api, getUser, useFetch } from "../api.js";
 import { useNotify } from "../components/Notify.jsx";
 import { plural } from "../format.js";
 import { MONO } from "../theme.js";
@@ -61,7 +61,7 @@ export function TestPointDialog({ open, testPoint, suites, tags, defaultSuite, o
     };
     try {
       if (editing) await api(`/test-points/${testPoint.id}`, { method: "PUT", body });
-      else await api("/test-points", { method: "POST", body: { ...body, suite_id: f.suite_id, columns, rows: rows.length ? rows : null } });
+      else await api("/test-points", { method: "POST", body: { ...body, suite_id: f.suite_id, columns, rows: rows.length ? rows : null, user: getUser() } });
       notify(editing ? "Test point saved" : "Test point added");
       onSaved();
       onClose();

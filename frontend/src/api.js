@@ -100,6 +100,28 @@ export async function streamEvents(path, onEvent, signal) {
   }
 }
 
+/** POST `body`, save the response as a file called `filename`, and return the response headers. */
+export async function downloadPost(path, body, filename) {
+  const res = await fetch(BASE + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    let detail;
+    try {
+      detail = (await res.json()).detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(message(detail, res.status));
+  }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await res.blob());
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  return res.headers;
+}
+
 // The acceptance log records a typed name until sign-in exists.
 const USER_KEY = "hub.user";
 export const getUser = () => localStorage.getItem(USER_KEY) || "";

@@ -1,16 +1,17 @@
 """Import an existing build folder, review its sheets, then create the suite (FR-04 to FR-08)."""
+import asyncio
 import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..db import NO_ID, db, iso, now
 from ..schemas import ImportCommit, SheetPatch
-from ..services import importer
+from ..services import importer, rowstore
 from ..services.baselines import write_baseline
 from .suites import check_name_free
 
 router = APIRouter(tags=["import"])
-MAX_UPLOAD_BYTES = 60 * 1024 * 1024
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
 async def load_draft(draft_id: str) -> dict:
@@ -37,7 +38,7 @@ async def create_import(files: list[UploadFile] = File(...), paths: list[str] = 
         data = await f.read()
         total += len(data)
         if total > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, "The folder is larger than 60 MB")
+            raise HTTPException(413, "The upload is larger than 200 MB")
         blobs[paths[i] if i < len(paths) and paths[i] else (f.filename or f"file{i}")] = data
     try:
         # A lone zip is an archive of the folder, unless it was picked as a file inside a folder.
@@ -52,7 +53,7 @@ async def create_import(files: list[UploadFile] = File(...), paths: list[str] = 
         workbook = only if only.lower().endswith((".xls", ".xlsx")) and "/" not in only else ""
         if workbook:
             fallback_name = workbook.rsplit(".", 1)[0]
-        built = importer.build_from_folder(blobs, any_workbook=bool(workbook))
+        built = await asyncio.to_thread(importer.build_from_folder, blobs, any_workbook=bool(workbook))
     except importer.ImportError_ as exc:
         raise HTTPException(400, str(exc))
     if not built["steps"]:
@@ -62,10 +63,11 @@ async def create_import(files: list[UploadFile] = File(...), paths: list[str] = 
     draft = {"id": str(uuid.uuid4()), "name": name, "build_folder": built["root"] or name,
              "steps": built["steps"], "warnings": built["warnings"], "created_at": now()}
     await db.import_drafts.insert_one(dict(draft))
-    if built["sheets"]:
-        await db.import_sheets.insert_many(
-            [{**s, "draft_id": draft["id"], "order": n, "created_at": draft["created_at"]}
-             for n, s in enumerate(built["sheets"])])
+    for n, s in enumerate(built["sheets"]):
+        # The sheet's rows go to the row store; the review screen works from the summary kept beside them.
+        raw_id = await rowstore.put(s.pop("raw_rows"))
+        await db.import_sheets.insert_one({**s, "raw_id": raw_id, "draft_id": draft["id"], "order": n,
+                                           "created_at": draft["created_at"]})
     return await draft_view(draft)
 
 
@@ -92,8 +94,9 @@ async def update_sheet(draft_id: str, sheet_id: str, body: SheetPatch):
     layout_changed = any(k in update and update[k] != sheet[k] for k in ("sql_row", "header_row"))
     if layout_changed:
         merged = {**sheet, **update}
-        parsed = importer.parse_sheet(sheet["raw_rows"], merged["sql_row"], merged["header_row"])
-        update["key_columns"] = importer.suggest_keys(parsed["columns"], parsed["rows"]) if parsed else []
+        update["meta"] = await asyncio.to_thread(importer.sheet_meta, await rowstore.get(sheet["raw_id"]),
+                                                 merged["sql_row"], merged["header_row"])
+        update["key_columns"] = update["meta"]["suggested_keys"]
     if "key_columns" in fields and body.key_columns is not None:
         update["key_columns"] = body.key_columns
     if update:
@@ -119,12 +122,14 @@ async def commit_import(draft_id: str, body: ImportCommit):
         raise HTTPException(400, "Two included sheets have the same name. Exclude one of them.")
 
     await check_name_free(body.name)
+    user = body.user.strip() or "import"
     suite = {"id": str(uuid.uuid4()), "name": body.name.strip(), "build_folder": body.build_folder.strip(),
              "description": body.description, "steps": draft["steps"], "inputs": [], "created_at": iso(),
              "updated_at": iso()}
     await db.suites.insert_one(dict(suite))
     for s in included:
-        parsed = importer.parse_sheet(s["raw_rows"], s["sql_row"], s["header_row"])
+        parsed = await asyncio.to_thread(importer.parse_sheet, await rowstore.get(s["raw_id"]), s["sql_row"],
+                                         s["header_row"])
         tp = {"id": str(uuid.uuid4()), "suite_id": suite["id"], "sheet_name": s["sheet_name"],
               "name": f"{s['checkpoint_name']} · {s['sheet_name']}", "module": s.get("module", ""),
               "description": f"Imported from {s['workbook']}, sheet {s['sheet_name']}.", "sql": parsed["sql"],
@@ -133,15 +138,21 @@ async def commit_import(draft_id: str, body: ImportCommit):
               "tags": ["imported"], "owner": "", "impacted_by": [], "checkpoint_id": s["checkpoint_id"],
               "created_at": iso(), "updated_at": iso()}
         await db.test_points.insert_one(dict(tp))
-        await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows": parsed["rows"], "flaky": False})
-        await write_baseline(tp, parsed["rows"], action="create", scope="import", user="import",
-                             reason=f"Imported from {s['workbook']}")
+        rows_id = await rowstore.put(parsed["rows"])
+        await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows_id": rows_id, "flaky": False})
+        await write_baseline(tp, parsed["rows"], action="create", scope="import", user=user,
+                             reason=f"Loaded from {s['workbook']}", before_rows=[])
+    await _discard(draft_id)
+    return {"suite": suite, "test_points": len(included), "steps": len(suite["steps"])}
+
+
+async def _discard(draft_id: str):
+    raw = [s["raw_id"] for s in await db.import_sheets.find({"draft_id": draft_id}, {"_id": 0, "raw_id": 1}).to_list(None)]
     await db.import_sheets.delete_many({"draft_id": draft_id})
     await db.import_drafts.delete_one({"id": draft_id})
-    return {"suite": suite, "test_points": len(included), "steps": len(suite["steps"])}
+    await rowstore.release(raw)
 
 
 @router.delete("/imports/{draft_id}", status_code=204)
 async def discard_import(draft_id: str):
-    await db.import_sheets.delete_many({"draft_id": draft_id})
-    await db.import_drafts.delete_one({"id": draft_id})
+    await _discard(draft_id)

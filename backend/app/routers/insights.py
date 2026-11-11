@@ -1,9 +1,11 @@
 """Dashboard KPIs and Build A vs B (FR-24, FR-30)."""
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from ..config import get_settings
 from ..db import NO_ID, db
-from ..services import ai, stats
+from ..services import ai, rowstore, stats
 from ..services.compare import compare
 
 router = APIRouter(tags=["insights"])
@@ -67,11 +69,15 @@ async def compare_builds(run_a: str, run_b: str):
     items = []
     for tid in sorted(ra.keys() & rb.keys(), key=lambda t: ra[t]["sheet_name"]):
         x, y = ra[tid], rb[tid]
-        out = compare(y["columns"], y["key_columns"], x["actual_rows"], y["actual_rows"], y["tolerance"])
+        if x["actual_id"] == y["actual_id"]:  # same content on both sides: nothing to load or compare
+            out = {"diffs": [], "matched": x["actual_count"]}
+        else:
+            out = await asyncio.to_thread(compare, y["columns"], y["key_columns"], await rowstore.get(x["actual_id"]),
+                                          await rowstore.get(y["actual_id"]), y["tolerance"])
         items.append({"test_point_id": tid, "sheet_name": y["sheet_name"], "name": y["name"],
                       "columns": y["columns"], "key_columns": y["key_columns"],
                       "status": "different" if out["diffs"] else "identical", "diff_count": len(out["diffs"]),
-                      "matched": out["matched"], "a_count": len(x["actual_rows"]), "b_count": len(y["actual_rows"]),
+                      "matched": out["matched"], "a_count": x["actual_count"], "b_count": y["actual_count"],
                       "diffs": out["diffs"][:MAX_COMPARE_DIFFS]})
     different = sum(1 for i in items if i["status"] == "different")
     return {"run_a": a, "run_b": b, "items": items,

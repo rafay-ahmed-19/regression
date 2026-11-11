@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useSearchParams } from "react-router-dom";
 import { Alert, Autocomplete, Box, Button, LinearProgress, MenuItem, Paper, Stack, TextField, Typography } from "@mui/material";
+import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import PlayArrow from "@mui/icons-material/PlayArrow";
-import { api, useFetch } from "../api.js";
+import { api, downloadPost, useFetch } from "../api.js";
 import { Empty, Mono, PageHeader } from "../components/Common.jsx";
 import { DataTable } from "../components/grids.jsx";
 import { useNotify } from "../components/Notify.jsx";
@@ -21,6 +22,7 @@ export default function Workbench() {
   const [sql, setSql] = useState("");
   const [limit, setLimit] = useState(500);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [savedSql, setSavedSql] = useState(null); // the SQL of the loaded test point as last saved
@@ -61,6 +63,24 @@ export default function Workbench() {
       setBusy(false);
     }
   };
+  // Runs the query again on the server and downloads every row (up to 100,000), not just those on screen.
+  const exportCsv = async () => {
+    if (!connectionId || !sql.trim() || exporting) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const name = `${testPoint?.sheet_name || "query"}_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}.csv`;
+      const headers = await downloadPost(`/oracle-connections/${connectionId}/export`, { sql }, name);
+      const count = Number(headers.get("X-Row-Count") || 0);
+      notify(headers.get("X-Truncated") === "true"
+        ? `Exported the first ${count.toLocaleString()} rows; the query returns more`
+        : `Exported ${plural(count, "row")} to ${name}`, headers.get("X-Truncated") === "true" ? "warning" : "success");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting(false);
+    }
+  };
   const save = async () => {
     try {
       await api(`/test-points/${testPoint.id}`, { method: "PUT", body: { sql } });
@@ -79,7 +99,7 @@ export default function Workbench() {
 
   return (
     <>
-      <PageHeader title="SQL workbench" subtitle="Try a query on an Oracle database. Only SELECT statements are run." />
+      <PageHeader title="SQL workbench" subtitle="Try a query on an Oracle database. Only SELECT statements are run. Export CSV downloads the full result, up to 100,000 rows." />
       {connections.data && list.length === 0 ? (
         <Paper variant="outlined">
           <Empty title="No Oracle connections" action={<Button variant="contained" component={RouterLink} to="/connections">Add a connection</Button>}>
@@ -111,6 +131,9 @@ export default function Workbench() {
           <Stack direction="row" sx={{ gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<PlayArrow />} onClick={run} disabled={busy || !connectionId || !sql.trim()}>Run query</Button>
             <Typography variant="caption" color="text.secondary">Ctrl + Enter</Typography>
+            <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={exportCsv} disabled={exporting || !connectionId || !sql.trim()}>
+              {exporting ? "Exporting…" : "Export CSV"}
+            </Button>
             {testPoint && <Button variant="outlined" onClick={save} disabled={!changed || !sql.trim()}>Save SQL to {testPoint.sheet_name}</Button>}
             {changed && <Typography variant="caption" color="warning.dark">Changed since it was loaded</Typography>}
             <Box sx={{ flex: 1 }} />
@@ -120,7 +143,7 @@ export default function Workbench() {
               </Typography>
             )}
           </Stack>
-          {busy && <LinearProgress />}
+          {(busy || exporting) && <LinearProgress />}
           {error && <Alert severity="error" sx={{ fontFamily: MONO, fontSize: 12.5, whiteSpace: "pre-wrap" }}>{error}</Alert>}
           {mismatch && (
             <Alert severity="warning">

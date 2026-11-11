@@ -31,9 +31,12 @@ def row_keys(rows: list[list], columns: list[str], key_columns: list[str]) -> li
         return [str(i + 1) for i in range(len(rows))]
     seen: dict[str, int] = {}
     keys = []
+    width = len(columns)
+    single = idx[0] if len(idx) == 1 else None
     for row in rows:
-        row = pad(row, len(columns))
-        key = " | ".join(_fmt_key(row[i]) for i in idx)
+        if len(row) != width:
+            row = pad(row, width)
+        key = _fmt_key(row[single]) if single is not None else " | ".join(_fmt_key(row[i]) for i in idx)
         n = seen.get(key, 0) + 1
         seen[key] = n
         keys.append(key if n == 1 else f"{key} #{n}")
@@ -68,23 +71,32 @@ def compare(columns: list[str], key_columns: list[str], expected: list[list], ac
 
     Each difference is `modified` (with the changed cells), `missing` (in expected
     only) or `extra` (in actual only). Row order never matters when keys are set.
+    One pass over each side: linear in the number of rows.
     """
     width = len(columns)
     exp_keys = row_keys(expected, columns, key_columns)
     act_keys = row_keys(actual, columns, key_columns)
     act_index = {k: i for i, k in enumerate(act_keys)}
     exp_seen = set(exp_keys)
+    span = range(width)
     diffs, matched = [], 0
 
     for i, key in enumerate(exp_keys):
-        e = pad(expected[i], width)
+        e = expected[i]
+        if len(e) != width:
+            e = pad(e, width)
         j = act_index.get(key)
         if j is None:
             diffs.append({"key": key, "type": "missing", "expected": e, "actual": None, "cells": list(columns),
                           "expected_row": i + 1, "actual_row": None})
             continue
-        a = pad(actual[j], width)
-        cells = [c for n, c in enumerate(columns) if not values_equal(e[n], a[n], tolerance)]
+        a = actual[j]
+        if len(a) != width:
+            a = pad(a, width)
+        if e == a:  # the common case: identical rows need no cell-by-cell look
+            matched += 1
+            continue
+        cells = [columns[n] for n in span if e[n] != a[n] and not values_equal(e[n], a[n], tolerance)]
         if cells:
             diffs.append({"key": key, "type": "modified", "expected": e, "actual": a, "cells": cells,
                           "expected_row": i + 1, "actual_row": j + 1})
@@ -95,6 +107,18 @@ def compare(columns: list[str], key_columns: list[str], expected: list[list], ac
             diffs.append({"key": key, "type": "extra", "expected": None, "actual": pad(actual[j], width),
                           "cells": list(columns), "expected_row": None, "actual_row": j + 1})
     return {"matched": matched, "diffs": diffs, "expected_count": len(expected), "actual_count": len(actual)}
+
+
+def summarize(columns: list[str], diffs: list[dict]) -> dict:
+    """How many rows differ per type and, for modified rows, per column."""
+    types = {"modified": 0, "missing": 0, "extra": 0}
+    counts = dict.fromkeys(columns, 0)
+    for d in diffs:
+        types[d["type"]] += 1
+        if d["type"] == "modified":
+            for c in d["cells"]:
+                counts[c] = counts.get(c, 0) + 1
+    return {"types": types, "columns": {c: n for c, n in counts.items() if n}}
 
 
 def apply_acceptance(columns: list[str], key_columns: list[str], baseline: list[list], actual: list[list],

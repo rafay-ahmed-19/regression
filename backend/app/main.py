@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .db import db, ensure_indexes
 from .routers import baselines, imports, insights, oracle_connections, runs, suites, test_points
-from .services import runner
+from .services import migrate, rowstore, runner
 from .services.seed import seed_demo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     if db.handle is None:
         db.connect()
     await ensure_indexes()
+    await migrate.move_inline_rows()
+    await rowstore.sweep()
     await runner.recover_interrupted()
     if settings.seed_demo and await seed_demo():
         log.info("Loaded demo suites and run history")
@@ -36,7 +38,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Evolv Regression Hub", version="1.0.0", lifespan=lifespan,
                   docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
-                       allow_methods=["*"], allow_headers=["*"])
+                       allow_methods=["*"], allow_headers=["*"], expose_headers=["X-Row-Count", "X-Truncated"])
     for module in (suites, imports, test_points, runs, baselines, insights, oracle_connections):
         app.include_router(module.router, prefix="/api")
 

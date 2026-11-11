@@ -135,7 +135,7 @@ Thirty-seven requirements across nine areas; all marked Must are built in Phase 
 | FR-05 | Mapping rules: a sub-folder of `.sql` files → setup SQL step; `.zip` → data-load step (mode, COB date and source read from the file name); `.properties` → run-job step with its key/values; `o_validation*.xls(x)` → validate checkpoint. | Must |
 | FR-06 | Inside a validation workbook, every sheet whose name starts with `r` becomes a test point: SQL from the first rows, column headers from the header row (row 2 by default), expected rows below seed the baseline. | Must |
 | FR-07 | Before creating the suite, a review screen shows every sheet with its detected SQL row, header row, columns and suggested key columns; sheets with issues (no SQL, no data, duplicate columns) are flagged and can be corrected or excluded. | Must |
-| FR-08 | Both `.xls` and `.xlsx` are supported, up to 5,000 rows per sheet. | Must |
+| FR-08 | Both `.xls` and `.xlsx` are supported, up to 100,000 rows per sheet. | Must |
 
 ### 5.3 Test point catalogue
 
@@ -179,8 +179,8 @@ Thirty-seven requirements across nine areas; all marked Must are built in Phase 
 | --- | --- | --- |
 | FR-25 | The baseline for each test point is stored in the database and versioned. | Must |
 | FR-26 | Accept a difference as the new baseline at four levels: a single cell, a row, a test point, or all failures in a run. | Must |
-| FR-27 | Each acceptance asks for a reason and records user, time, scope, version, rows changed and before/after data. | Must |
-| FR-28 | Baselines page lists every change; the most recent change per test point can be rolled back, which itself is logged. | Must |
+| FR-27 | Each acceptance asks for a reason and records user, time, scope, version, rows changed and before/after data. The first version records who loaded it. | Must |
+| FR-28 | Baselines page lists every version of every baseline with who changed it, and can be filtered by test point and by user; the most recent change per test point can be rolled back, which itself is logged. | Must |
 | FR-29 | After an acceptance, the affected result is re-compared and its status updates immediately. | Must |
 
 ### 5.8 Dashboard and reporting
@@ -199,7 +199,7 @@ Thirty-seven requirements across nine areas; all marked Must are built in Phase 
 | FR-34 | A run can use a saved connection. The Hub executes each test point's SQL on that database, takes the returned rows as the actual result and compares them with the baseline. Build steps are skipped because the build has already run there. SQL is run as written; values are part of the query, not bound at run time. | Must |
 | FR-35 | Build A vs B can run one suite on two Oracle connections and compare the two results with each other. | Must |
 | FR-36 | Only SELECT (or WITH ... SELECT) statements are executed. A query that fails is shown as an error on its test point with Oracle's message and does not stop the other test points. An unreachable database stops the run with a clear message. | Must |
-| FR-37 | A SQL workbench runs a query on a chosen connection and shows the first rows (up to 5,000), the row count and the duration. It can load a test point's SQL and save an edited query back to it. The same SELECT-only rule applies. | Must |
+| FR-37 | A SQL workbench runs a query on a chosen connection and shows the first rows (up to 5,000 on screen), the row count and the duration. It can load a test point's SQL and save an edited query back to it. The same SELECT-only rule applies. The full result, up to 100,000 rows, can be exported as CSV. | Must |
 
 ## 6. Data and integrations
 
@@ -209,7 +209,8 @@ All state lives in MongoDB. Oracle is queried directly by the Hub for runs that 
 | --- | --- |
 | `suites` | Build folder, description, ordered steps, input zips |
 | `test_points` | Sheet name, SQL, columns, key columns, tolerance, tags, owner, impacted-by paths, checkpoint |
-| `baselines` | Current expected rows and version per test point |
+| `baselines` | Current version per test point, who last changed it, and a reference to its rows |
+| `blobs`, `blob_chunks` | Rows and differences, as chunks of compressed JSON shared between baselines, history and run results |
 | `baseline_history` | Every acceptance and rollback: scope, user, reason, version, before/after rows |
 | `runs` | Suite, branch or build label, source (Oracle connection or simulated), commit, changed files, step logs, counts, status, duration |
 | `oracle_connections` | Name, host, port, service name or SID, user, password |
@@ -231,7 +232,7 @@ The Hub must run where it can reach Oracle: on a machine inside the company netw
 | Area | Requirement |
 | --- | --- |
 | Usability | Dense engineering-tool layout; light theme; monospaced data grids; red/green/amber status; every failure reachable in 2–3 clicks from a run |
-| Performance | Test points within a checkpoint run in parallel; diff grid handles up to 5,000 rows per sheet with sticky headers |
+| Performance | Test points within a checkpoint run in parallel; results of up to 100,000 rows per test point are compared, stored in compressed chunks and shown page by page, with sticky headers |
 | Auditability | No baseline change without a logged user, time and reason; rollback is itself logged |
 | Security | Phase 1 has no login; Phase 3 adds sign-in and roles restricting who may accept baselines; data masking (P2). Oracle passwords are stored in MongoDB and never returned by the API; use a read-only Oracle account |
 | Data privacy | AI analysis sends only failing rows and columns (max 25 diffs), never whole datasets |

@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 
 from ..db import db, iso, now
-from . import runner
+from . import rowstore, runner
 from .baselines import write_baseline
 
 NAMESPACE = uuid.UUID("6f1d3c52-6f0e-4d1b-9a53-0c6f6f3b7a11")
@@ -143,7 +143,7 @@ async def seed_demo() -> bool:
               "description": f"Compares {name.lower()} returned by Oracle with the approved baseline.",
               "created_at": iso(start), "updated_at": iso(start)}
         await db.test_points.insert_one(dict(tp))
-        await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows": rows, "flaky": flaky})
+        await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows_id": await rowstore.put(rows), "flaky": flaky})
         await write_baseline(tp, rows, action="create", scope="initial", user="system",
                              reason="Initial baseline from the Excel driver", created_at=iso(start))
 

@@ -10,10 +10,11 @@ import zipfile
 import openpyxl
 import xlrd
 
+from ..limits import MAX_ROWS
+
 NUMBERED = re.compile(r"^(\d+)[._\-\s]+(.+)$")
 SQL_START = re.compile(r"^\s*(select|with)\b", re.I)
 DATE_TOKEN = re.compile(r"_(\d{8})(?:_([A-Za-z0-9]+))?")
-MAX_ROWS = 5000
 HEAD_ROOM = 10  # rows above the data that may hold SQL and headers
 DEFAULT_HEADER_ROW = 2
 
@@ -218,13 +219,13 @@ def build_from_folder(files: dict[str, bytes], any_workbook: bool = False) -> di
                     if not sheet_name.lower().startswith("r"):
                         continue
                     sql_row, header_row = detect_layout(rows)
-                    parsed = parse_sheet(rows, sql_row, header_row)
+                    meta = sheet_meta(rows, sql_row, header_row)
                     sheets.append({
                         "id": str(uuid.uuid4()), "sheet_name": sheet_name, "workbook": name,
                         "checkpoint_id": step_id, "checkpoint_name": checkpoint, "module": root or "",
                         "sql_row": sql_row, "header_row": header_row, "raw_rows": rows, "truncated": truncated,
-                        "key_columns": suggest_keys(parsed["columns"], parsed["rows"]) if parsed else [],
-                        "included": True,
+                        "head": [r[:30] for r in rows[:HEAD_ROOM]], "meta": meta,
+                        "key_columns": meta["suggested_keys"], "included": True,
                     })
                     count += 1
             except Exception as exc:  # unreadable or corrupt workbook
@@ -239,24 +240,30 @@ def build_from_folder(files: dict[str, bytes], any_workbook: bool = False) -> di
     return {"root": root, "steps": steps, "sheets": sheets, "warnings": warnings}
 
 
-def sheet_view(sheet: dict, preview_rows: int = 12) -> dict:
+def sheet_meta(rows: list[list], sql_row: int | None, header_row: int | None, preview_rows: int = 12) -> dict:
+    """Parse a sheet once and keep what the review screen needs, so the rows need not be re-read."""
+    parsed = parse_sheet(rows, sql_row, header_row)
+    return {
+        "sql": parsed["sql"] if parsed else "", "columns": parsed["columns"] if parsed else [],
+        "row_count": len(parsed["rows"]) if parsed else 0, "preview": parsed["rows"][:preview_rows] if parsed else [],
+        "truncated": bool(parsed and parsed["truncated"]), "issues": sheet_issues(parsed),
+        "suggested_keys": suggest_keys(parsed["columns"], parsed["rows"]) if parsed else [],
+    }
+
+
+def sheet_view(sheet: dict) -> dict:
     """What the review screen shows for one sheet."""
-    parsed = parse_sheet(sheet["raw_rows"], sheet["sql_row"], sheet["header_row"])
-    issues = sheet_issues(parsed)
-    columns = parsed["columns"] if parsed else []
-    keys = [k for k in sheet.get("key_columns", []) if k in columns]
+    meta = sheet["meta"]
+    keys = [k for k in sheet.get("key_columns", []) if k in meta["columns"]]
     notes = []
-    if parsed and (parsed["truncated"] or sheet.get("truncated")):
+    if meta["truncated"] or (sheet.get("truncated") and meta["row_count"] >= MAX_ROWS):
         notes.append(f"Only the first {MAX_ROWS:,} rows are imported")
-    if parsed and parsed["rows"] and not keys:
+    if meta["row_count"] and not keys:
         notes.append("No key columns: rows will be matched by position")
     return {
         "id": sheet["id"], "sheet_name": sheet["sheet_name"], "workbook": sheet["workbook"],
         "checkpoint_name": sheet["checkpoint_name"], "included": sheet.get("included", True),
-        "sql_row": sheet["sql_row"], "header_row": sheet["header_row"],
-        "sql": parsed["sql"] if parsed else "", "columns": columns, "key_columns": keys,
-        "row_count": len(parsed["rows"]) if parsed else 0,
-        "preview": parsed["rows"][:preview_rows] if parsed else [],
-        "head": [r[:30] for r in sheet["raw_rows"][:HEAD_ROOM]],
-        "issues": issues, "notes": notes,
+        "sql_row": sheet["sql_row"], "header_row": sheet["header_row"], "sql": meta["sql"],
+        "columns": meta["columns"], "key_columns": keys, "row_count": meta["row_count"],
+        "preview": meta["preview"], "head": sheet["head"], "issues": meta["issues"], "notes": notes,
     }

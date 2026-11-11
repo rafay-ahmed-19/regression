@@ -104,7 +104,7 @@ This is how you create a suite with its test points and baselines.
 | Row 3 onwards | The expected result rows. These become the baseline. |
 
 Sheets with other names are ignored, so you can keep notes in the same file. Both `.xlsx` and
-`.xls` work, with up to 5,000 rows per sheet.
+`.xls` work, with up to 100,000 rows per sheet.
 
 **Steps**
 
@@ -125,8 +125,9 @@ Sheets with other names are ignored, so you can keep notes in the same file. Bot
    - **Key columns** are the columns that identify a row (shown in blue). Click column names to
      change them. Getting these right matters: rows are matched on them.
    - Untick the box at the start of a row to leave a sheet out.
-5. Check the **Suite name**, then click **Create suite**. The button stays grey until every included
-   sheet looks right.
+5. Check the **Suite name** and type **Your name**, then click **Create suite**. The button stays
+   grey until every included sheet looks right and your name is filled in. Your name is recorded as
+   the person who created version 1 of each baseline.
 
 Each included sheet is now a test point with its own SQL, and its rows are **version 1** of its
 baseline. A load that you start but do not finish is discarded after 24 hours.
@@ -239,7 +240,7 @@ Things to know about the SQL:
 - Only queries are run: statements that start with `SELECT` or `WITH`. Anything else is refused.
 - Values must be written into the query. Placeholders such as `:cob_date` are not filled in.
 - A trailing semicolon is fine; the Hub removes it.
-- Results are compared up to 5,000 rows. A query that returns more is reported as an error.
+- Results are compared up to 100,000 rows. A query that returns more is reported as an error.
 - The columns the query returns should match the test point's columns. If the names match they are
   lined up by name, otherwise by position.
 
@@ -309,6 +310,9 @@ Click one to see the detail on the right.
 - The **Actual (Oracle)**, **Baseline** and **SQL** tabs show everything the query returned, the
   full baseline and the query itself.
 
+Large results are fine: with tens of thousands of rows the lists load as you scroll, and a row
+shown as `…` is still loading.
+
 ### Ask for an AI explanation
 
 Click **Analyse failure**. A panel opens on the right and writes a short analysis: a summary, the
@@ -348,22 +352,46 @@ point turns green.
 Accepting everything in a run is fast, but it also accepts anything you did not look at. Use it only
 when you have reviewed the failures.
 
-## 9. Baselines: history and undo
+## 9. Baselines: version history, and who changed what
+
+Every baseline has versions. Version 1 is created when the workbook is loaded; each accepted change
+or rollback adds the next one. Nothing is overwritten silently: the Baselines page lists every
+version of every test point.
 
 ![Baselines](images/baselines.png)
 
-The Baselines page lists every baseline change: when, which test point, what kind of change, the
-new version, who made it and why.
+For each version you see:
 
-- Click **View** to see the before and after values of the rows that changed.
+| Column | Meaning |
+| --- | --- |
+| When | Date and time of the change |
+| Test point | Which baseline changed |
+| Change | **Created** (first load), **Accepted** or **Rolled back** |
+| Scope | How much was accepted: one cell, one row, the whole test point, or a whole run |
+| Version | The version this change produced |
+| Rows changed | How many rows differ from the version before |
+| Changed by | The name typed by the person who made the change |
+| Reason | Why they made it |
+
+**To see one test point's history,** choose it in the **Test point** box, or click its version
+number in the Catalogue. The Catalogue also shows, under each version number, how many rows the
+baseline has and who changed it last.
+
+**To see everything one person changed,** choose their name in **Changed by**.
+
+Click **View** on any version to see the before and after values of the rows that changed.
 
 ![Baseline change](images/baseline-change.png)
 
-- Click **Roll back** to undo a change. Only the **most recent** change of each test point can be
-  rolled back. You are asked for your name and a reason, and the rollback is itself added to the list.
+Click **Roll back** to undo a change. Only the **most recent** version of each test point can be
+rolled back. You are asked for your name and a reason, and the rollback is itself added as a new
+version, so the history stays complete.
 
 Rolling back does not change the results of runs that already finished. Start a new run to see the
 effect.
+
+The name is whatever the person types, because the app has no login yet. It is remembered on their
+computer so they do not retype it each time.
 
 ## 10. Build A vs B: compare two databases
 
@@ -416,6 +444,9 @@ Good to know:
 - Only `SELECT` and `WITH` queries are run. Anything else is refused and never sent to the database.
 - **Show up to** limits how many rows are displayed (500 by default, 5,000 at most). The message
   says when more rows exist.
+- **Export CSV** downloads the whole result as a file you can open in Excel: every row the query
+  returns, up to 100,000, not only the rows on screen. The query is run again for the export, and a
+  message tells you how many rows were written (and warns you if the query returns more than the limit).
 - If Oracle rejects the query, its message is shown in red.
 - When you loaded a test point and changed the query, **Save SQL to …** stores your version on that
   test point. The next run uses it. A yellow note warns you if the query returns different columns

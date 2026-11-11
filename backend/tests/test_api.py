@@ -6,7 +6,9 @@ from openpyxl import load_workbook
 from app.db import db
 from scripts.make_sample_folder import build_files, build_zip
 
-from .conftest import finish, run_suite
+from app.services import rowstore
+
+from .conftest import baseline, finish, full_result, run_suite
 
 VAL, GL = "Trade Valuation EOD", "GL Reconciliation"
 
@@ -93,7 +95,7 @@ async def test_import_folder_review_correct_and_commit(client):
     assert [t["sheet_name"] for t in tps] == ["r_accrued_interest", "r_loan_balances"]
     assert all(t["baseline_version"] == 1 for t in tps)
     detail = (await client.get(f"/api/test-points/{tps[1]['id']}")).json()
-    assert len(detail["baseline_rows"]) == 14
+    assert detail["baseline_rows"] == 14 and len(await baseline(client, tps[1]["id"])) == 14
 
     # the imported suite runs green on main against its imported baseline
     run = await run_suite(client, "loan_accrual", "main")
@@ -147,7 +149,7 @@ async def test_run_main_passes_with_step_logs(seeded):
     assert all(s["status"] == "done" and s["log"] for s in run["steps"])
     assert run["finished_at"] and run["duration_ms"] is not None
     assert {r["status"] for r in run["results"]} == {"passed"}
-    assert "actual_rows" not in run["results"][0]
+    assert not {"actual_rows", "actual_id", "diffs_id", "diffs"} & run["results"][0].keys()
 
 
 async def test_impacted_only_runs_matching_test_points(seeded):
@@ -199,7 +201,7 @@ async def failing_run(client):
 
 async def test_failure_view_payload(seeded):
     run, fx = await failing_run(seeded)
-    res = (await seeded.get(f"/api/runs/{run['id']}/results/{fx['test_point_id']}")).json()
+    res = await full_result(seeded, run['id'], fx['test_point_id'])
     assert res["diffs"] and res["diff_count"] == len(res["diffs"])
     assert res["expected_count"] == len(res["expected_rows"]) and res["actual_count"] == len(res["actual_rows"])
     assert res["sql"].startswith("SELECT ccy_pair") and res["key_columns"] == ["CCY_PAIR"]
@@ -224,7 +226,7 @@ async def test_accept_cell_then_row_then_test_point(seeded):
     for r in run["results"]:
         if r["status"] != "failed":
             continue
-        res = (await seeded.get(f"/api/runs/{rid}/results/{r['test_point_id']}")).json()
+        res = await full_result(seeded, rid, r['test_point_id'])
         if any(d["type"] == "modified" for d in res["diffs"]):
             target = res
             break
@@ -238,12 +240,12 @@ async def test_accept_cell_then_row_then_test_point(seeded):
         "reason": "Rounding to 6dp agreed", "user": "rafay"})
     assert r.status_code == 200, r.text
     assert r.json()["accepted"][0]["version"] == 2 and r.json()["accepted"][0]["rows_changed"] == 1
-    res = (await seeded.get(f"/api/runs/{rid}/results/{tid}")).json()
+    res = await full_result(seeded, rid, tid)
     assert res["baseline_version"] == 2
     same_row = [d for d in res["diffs"] if d["key"] == mod["key"]]
     assert all(col not in d["cells"] for d in same_row)
     idx = res["columns"].index(col)
-    base = (await seeded.get(f"/api/test-points/{tid}")).json()["baseline_rows"]
+    base = await baseline(seeded, tid)
     assert mod["actual"][idx] in [row[idx] for row in base]
 
     if res["diffs"]:
@@ -251,14 +253,14 @@ async def test_accept_cell_then_row_then_test_point(seeded):
         r = await seeded.post(f"/api/runs/{rid}/accept", json={
             "scope": "row", "test_point_id": tid, "row_key": d["key"], "reason": "Row reviewed", "user": "rafay"})
         assert r.status_code == 200, r.text
-        res = (await seeded.get(f"/api/runs/{rid}/results/{tid}")).json()
+        res = await full_result(seeded, rid, tid)
         assert d["key"] not in [x["key"] for x in res["diffs"]] and res["diff_count"] < before
 
     if res["status"] == "failed":
         r = await seeded.post(f"/api/runs/{rid}/accept", json={
             "scope": "test_point", "test_point_id": tid, "reason": "Accept the rest", "user": "rafay"})
         assert r.status_code == 200
-    res = (await seeded.get(f"/api/runs/{rid}/results/{tid}")).json()
+    res = await full_result(seeded, rid, tid)
     assert res["status"] == "passed" and res["diffs"] == [] and res["matched"] == res["actual_count"]
 
     again = await seeded.post(f"/api/runs/{rid}/accept", json={
@@ -284,7 +286,7 @@ async def test_accept_run_audit_and_rollback(seeded):
     assert (entry["action"], entry["scope"], entry["user"], entry["version"]) == ("accept", "run", "qa.lead", 2)
     assert entry["reason"] == "FX rounding release sign-off" and entry["run_id"] == run["id"]
     assert entry["rows_changed"] >= 1 and entry["created_at"] and entry["can_roll_back"]
-    assert "before_rows" not in entry and not initial["can_roll_back"]
+    assert not {"before_rows", "before_id", "after_id"} & entry.keys() and not initial["can_roll_back"]
 
     detail = (await seeded.get(f"/api/baseline-history/{entry['id']}")).json()
     assert len(detail["diffs"]) == entry["rows_changed"] and detail["columns"][0] == "CCY_PAIR"
@@ -296,7 +298,8 @@ async def test_accept_run_audit_and_rollback(seeded):
     assert back.status_code == 200 and (back.json()["action"], back.json()["version"]) == ("rollback", 3)
     tp = (await seeded.get(f"/api/test-points/{fx['test_point_id']}")).json()
     v1 = await db.baseline_history.find_one({"id": initial["id"]})
-    assert tp["baseline_version"] == 3 and tp["baseline_rows"] == v1["after_rows"]
+    assert tp["baseline_version"] == 3 and tp["baseline_updated_by"] == "qa.lead"
+    assert await baseline(seeded, fx["test_point_id"]) == await rowstore.get(v1["after_id"])
     log = (await seeded.get(f"/api/baseline-history?test_point_id={fx['test_point_id']}")).json()
     assert [h["action"] for h in log] == ["rollback", "accept", "create"]
     assert [h["can_roll_back"] for h in log] == [True, False, False]
@@ -310,7 +313,8 @@ async def test_tolerance_turns_small_differences_green(client):
     tp = (await client.post("/api/test-points", json={
         "suite_id": suite["id"], "sheet_name": "r_t", "name": "T", "columns": ["ID", "AMOUNT"],
         "key_columns": ["ID"], "rows": [["a", 100.0], ["b", 200.0]]})).json()
-    await db.oracle_sim.update_one({"test_point_id": tp["id"]}, {"$set": {"rows": [["b", 200.004], ["a", 100.0]]}})
+    sim = await rowstore.put([["b", 200.004], ["a", 100.0]])
+    await db.oracle_sim.update_one({"test_point_id": tp["id"]}, {"$set": {"rows_id": sim}})
     assert (await run_suite(client, "Tol", "main"))["status"] == "failed"
     await client.put(f"/api/test-points/{tp['id']}", json={"tolerance": 0.01})
     assert (await run_suite(client, "Tol", "main"))["status"] == "passed"
@@ -371,7 +375,8 @@ async def test_ai_prompt_sends_only_failing_cells(seeded):
     from app.services import ai
     run, fx = await failing_run(seeded)
     res = await db.run_results.find_one({"run_id": run["id"], "test_point_id": fx["test_point_id"]})
-    res["diffs"] = res["diffs"] * 40
+    res["diffs"] = await rowstore.get(res["diffs_id"]) * 40
+    res["actual_rows"] = await rowstore.get(res["actual_id"])
     prompt = ai.build_prompt(run, res, [])
     assert prompt.count("\n- key=") == ai.MAX_DIFFS
     assert "src/fx/rounding.py" in prompt and "SELECT ccy_pair" in prompt

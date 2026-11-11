@@ -7,8 +7,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from ..db import NO_ID, db, iso
+from ..limits import MAX_PAGE, MAX_ROWS
 from ..schemas import BulkIds, BulkUpdate, TestPointIn, TestPointUpdate
-from ..services import simulator, stats
+from ..services import rowstore, simulator, stats
 from ..services.baselines import get_baseline, write_baseline
 from .suites import delete_test_point_data, load_suite
 
@@ -32,12 +33,15 @@ async def catalogue(q: str = "", tag: str = "", suite_id: str = "") -> list[dict
         tps = [t for t in tps if any(needle in str(t.get(f, "")).lower() for f in ("sheet_name", "name", "sql", "owner"))]
     ids = [t["id"] for t in tps]
     suites = {s["id"]: s["name"] for s in await db.suites.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(None)}
-    versions = {b["test_point_id"]: b["version"] for b in await db.baselines.find(
-        {"test_point_id": {"$in": ids}}, {"_id": 0, "test_point_id": 1, "version": 1}).to_list(None)}
+    baselines = {b["test_point_id"]: b for b in await db.baselines.find(
+        {"test_point_id": {"$in": ids}}, {"_id": 0, "rows_id": 0}).to_list(None)}
     numbers = await stats.test_point_stats(ids)
     for t in tps:
         t["suite_name"] = suites.get(t["suite_id"], "")
-        t["baseline_version"] = versions.get(t["id"], 0)
+        b = baselines.get(t["id"], {})
+        t["baseline_version"] = b.get("version", 0)
+        t["baseline_rows"] = b.get("row_count", 0)
+        t["baseline_updated_by"], t["baseline_updated_at"] = b.get("updated_by"), b.get("updated_at")
         t.update(numbers[t["id"]])
     return tps
 
@@ -88,13 +92,15 @@ async def create_test_point(body: TestPointIn):
         rows = simulator.synthetic_rows(columns)
     elif any(len(r) != len(columns) for r in rows):
         raise HTTPException(400, "Every expected row must have one value per column")
-    tp = {**body.model_dump(exclude={"rows"}), "id": str(uuid.uuid4()), "sheet_name": body.sheet_name.strip(),
+    elif len(rows) > MAX_ROWS:
+        raise HTTPException(400, f"A baseline can hold up to {MAX_ROWS:,} rows")
+    tp = {**body.model_dump(exclude={"rows", "user"}), "id": str(uuid.uuid4()), "sheet_name": body.sheet_name.strip(),
           "columns": columns, "key_columns": keys,
           "checkpoint_id": body.checkpoint_id if body.checkpoint_id in checkpoints else None,
           "created_at": iso(), "updated_at": iso()}
     await db.test_points.insert_one(dict(tp))
-    await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows": rows, "flaky": False})
-    await write_baseline(tp, rows, action="create", scope="initial", user="system",
+    await db.oracle_sim.insert_one({"test_point_id": tp["id"], "rows_id": await rowstore.put(rows), "flaky": False})
+    await write_baseline(tp, rows, action="create", scope="initial", user=body.user.strip() or "system",
                          reason="Initial baseline" if body.rows else "Initial baseline (generated sample rows)")
     return tp
 
@@ -105,7 +111,18 @@ async def get_test_point(test_point_id: str):
     baseline = await get_baseline(test_point_id)
     history = (await stats.histories([test_point_id])).get(test_point_id, [])
     return {**tp, **stats.summarize(history), "baseline_version": baseline["version"],
-            "baseline_rows": baseline["rows"], "history": history[::-1][:30]}
+            "baseline_rows": baseline.get("row_count", 0), "baseline_updated_by": baseline.get("updated_by"),
+            "baseline_updated_at": baseline.get("updated_at"), "history": history[::-1][:30]}
+
+
+@router.get("/test-points/{test_point_id}/baseline")
+async def get_baseline_rows(test_point_id: str, offset: int = 0, limit: int = 2000):
+    """One page of the current baseline rows."""
+    await load_test_point(test_point_id)
+    baseline = await get_baseline(test_point_id)
+    offset, limit = max(0, offset), max(1, min(limit, MAX_PAGE))
+    return {"version": baseline["version"], "total": baseline.get("row_count", 0), "offset": offset,
+            "rows": await rowstore.page(baseline["rows_id"], offset, limit)}
 
 
 @router.put("/test-points/{test_point_id}")

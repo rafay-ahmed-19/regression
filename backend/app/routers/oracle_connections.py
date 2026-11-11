@@ -1,11 +1,16 @@
 """Oracle databases that runs can query. Passwords are stored but never returned."""
+import asyncio
+import csv
+import io
 import time
 import uuid
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 
 from ..db import NO_ID, db, iso
-from ..schemas import OracleConnectionIn, OracleConnectionTest, QueryIn
+from ..limits import MAX_ROWS
+from ..schemas import ExportIn, OracleConnectionIn, OracleConnectionTest, QueryIn
 from ..services import oracle
 
 router = APIRouter(tags=["oracle connections"])
@@ -94,3 +99,25 @@ async def run_query(connection_id: str, body: QueryIn):
         raise HTTPException(400, str(exc))
     return {"columns": columns, "rows": rows, "row_count": len(rows), "truncated": more,
             "duration_ms": int((time.monotonic() - started) * 1000)}
+
+
+def _to_csv(columns: list[str], rows: list[list]) -> bytes:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")  # the BOM makes Excel read UTF-8 correctly
+
+
+@router.post("/oracle-connections/{connection_id}/export")
+async def export_query(connection_id: str, body: ExportIn):
+    """Workbench: run a query and download the whole result as CSV, up to MAX_ROWS rows."""
+    conn = await load_connection(connection_id, with_password=True)
+    try:
+        columns, rows, more = await oracle.fetch(conn, body.sql, MAX_ROWS)
+    except oracle.OracleError as exc:
+        raise HTTPException(400, str(exc))
+    data = await asyncio.to_thread(_to_csv, columns, rows)
+    return Response(data, media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": 'attachment; filename="query_result.csv"',
+        "X-Row-Count": str(len(rows)), "X-Truncated": "true" if more else "false"})

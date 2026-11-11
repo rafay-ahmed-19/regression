@@ -1,18 +1,21 @@
 """Runs, results, baseline acceptance, AI analysis and exports."""
+import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 
 from ..db import NO_ID, db
+from ..limits import MAX_PAGE
 from ..schemas import AcceptIn, BulkIds, RunIn
-from ..services import ai, reports, runner, simulator, stats
-from ..services.baselines import get_baseline, write_baseline
+from ..services import ai, reports, rowstore, runner, simulator, stats
+from ..services.baselines import baseline_rows, write_baseline
 from ..services.compare import apply_acceptance
 from .suites import load_suite
 
 router = APIRouter(tags=["runs"])
 RUN_LIST = {"_id": 0, "steps": 0}
+EXPORT_DIFFS = 5000  # differing rows written per test point in an Excel report
 
 
 async def load_run(run_id: str) -> dict:
@@ -88,12 +91,20 @@ async def rerun(run_id: str):
     return run
 
 
+async def _stored_ids(query: dict) -> list[str]:
+    fields = {"_id": 0, "expected_id": 1, "actual_id": 1, "diffs_id": 1}
+    return [v for r in await db.run_results.find(query, fields).to_list(None) for v in r.values() if v]
+
+
 async def _delete_runs(run_ids: list[str]) -> int:
     active = await db.runs.count_documents({"id": {"$in": run_ids}, "status": {"$in": runner.ACTIVE}})
     if active:
         raise HTTPException(409, "A run that is still in progress cannot be deleted")
+    stored = await _stored_ids({"run_id": {"$in": run_ids}})
     await db.run_results.delete_many({"run_id": {"$in": run_ids}})
-    return (await db.runs.delete_many({"id": {"$in": run_ids}})).deleted_count
+    deleted = (await db.runs.delete_many({"id": {"$in": run_ids}})).deleted_count
+    await rowstore.release(stored)
+    return deleted
 
 
 @router.delete("/runs/{run_id}", status_code=204)
@@ -109,14 +120,50 @@ async def bulk_delete_runs(body: BulkIds):
 
 @router.get("/runs/{run_id}/results/{test_point_id}")
 async def get_result(run_id: str, test_point_id: str):
-    """Everything the failure view needs: rows, diffs, SQL and the history strip."""
+    """What the failure view shows first: counts, SQL, the per-column summary and the history strip.
+
+    Rows and differences are read page by page from the two endpoints below.
+    """
     result = await load_result(run_id, test_point_id)
+    for field in ("expected_id", "actual_id", "diffs_id"):
+        result.pop(field, None)
     history = (await stats.histories([test_point_id])).get(test_point_id, [])
     summary = stats.summarize(history)
     result["history"] = history[::-1][:30]
     result["flaky"], result["flips"] = summary["flaky"], summary["flips"]
     result["test_point_exists"] = bool(await db.test_points.count_documents({"id": test_point_id}))
     return result
+
+
+@router.get("/runs/{run_id}/results/{test_point_id}/rows")
+async def result_rows(run_id: str, test_point_id: str, side: str = "actual", offset: int = 0, limit: int = 2000):
+    """One page of the actual (Oracle) rows or of the baseline rows the result was compared with."""
+    if side not in ("actual", "expected"):
+        raise HTTPException(400, "side must be actual or expected")
+    result = await load_result(run_id, test_point_id)
+    offset, limit = max(0, offset), max(1, min(limit, MAX_PAGE))
+    return {"total": result[f"{side}_count"], "offset": offset,
+            "rows": await rowstore.page(result.get(f"{side}_id"), offset, limit)}
+
+
+@router.get("/runs/{run_id}/results/{test_point_id}/diffs")
+async def result_diffs(run_id: str, test_point_id: str, offset: int = 0, limit: int = 500, type: str = "",
+                       column: str = ""):
+    """One page of differences, optionally only one type or only rows where one column differs."""
+    result = await load_result(run_id, test_point_id)
+    offset, limit = max(0, offset), max(1, min(limit, MAX_PAGE))
+    if not type and not column:
+        return {"total": result["diff_count"], "offset": offset,
+                "items": await rowstore.page(result.get("diffs_id"), offset, limit)}
+    items, seen = [], 0
+    async for chunk in rowstore.scan(result.get("diffs_id")):
+        for d in chunk:
+            if (type and d["type"] != type) or (column and (d["type"] != "modified" or column not in d["cells"])):
+                continue
+            if offset <= seen < offset + limit:
+                items.append(d)
+            seen += 1
+    return {"total": seen, "offset": offset, "items": items}
 
 
 @router.post("/runs/{run_id}/accept")
@@ -149,21 +196,22 @@ async def accept(run_id: str, body: AcceptIn):
             if body.scope == "run":
                 continue
             raise HTTPException(404, "This test point has been deleted")
+        actual = await rowstore.get(result["actual_id"])
+        current = await baseline_rows(tid)
         if body.scope in ("run", "test_point"):
-            rows = result["actual_rows"]
+            rows = actual
         else:
-            current = await get_baseline(tid)
             try:
-                rows = apply_acceptance(result["columns"], result["key_columns"], current["rows"],
-                                        result["actual_rows"], body.row_key,
-                                        body.column if body.scope == "cell" else None)
+                rows = await asyncio.to_thread(apply_acceptance, result["columns"], result["key_columns"], current,
+                                               actual, body.row_key, body.column if body.scope == "cell" else None)
             except ValueError as exc:
                 raise HTTPException(400, str(exc))
         entry = await write_baseline(tp, rows, action="accept", scope=body.scope, user=body.user,
-                                     reason=body.reason, run_id=run_id,
+                                     reason=body.reason, run_id=run_id, before_rows=current,
                                      row_key=body.row_key if body.scope in ("row", "cell") else None,
                                      column=body.column if body.scope == "cell" else None)
-        await runner.recompare_result(run_id, tid, {"rows": rows, "version": entry["version"]})
+        await runner.recompare_result(result, rows, actual,
+                                      {"rows_id": entry["after_id"], "version": entry["version"]})
         accepted.append({"test_point_id": tid, "sheet_name": tp["sheet_name"], "version": entry["version"],
                          "rows_changed": entry["rows_changed"]})
     await runner.finalize_run(run_id)
@@ -178,6 +226,7 @@ async def explain(run_id: str, test_point_id: str):
     if result["status"] != "failed":
         raise HTTPException(409, "Only failed results can be analysed")
     history = (await stats.histories([test_point_id])).get(test_point_id, [])
+    result["diffs"] = await rowstore.page(result.get("diffs_id"), 0, ai.MAX_DIFFS)
     prompt = ai.build_prompt(run, result, history)
 
     async def events():
@@ -199,11 +248,13 @@ async def export(run_id: str, format: str = "xlsx"):
     if run["status"] in runner.ACTIVE:
         raise HTTPException(409, "Wait for the run to finish before exporting")
     results = await db.run_results.find({"run_id": run_id}, NO_ID).to_list(None)
+    for r in results:
+        r["diffs"] = await rowstore.page(r.get("diffs_id"), 0, EXPORT_DIFFS) if r["status"] == "failed" else []
     name = f"regression_{run['suite_name']}_{run['branch']}_{run_id[:8]}".replace("/", "-").replace(" ", "_")
     if format == "pdf":
-        body, media = reports.build_pdf(run, results), "application/pdf"
+        body, media = await asyncio.to_thread(reports.build_pdf, run, results), "application/pdf"
     elif format == "xlsx":
-        body = reports.build_excel(run, results)
+        body = await asyncio.to_thread(reports.build_excel, run, results)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         raise HTTPException(400, "format must be pdf or xlsx")

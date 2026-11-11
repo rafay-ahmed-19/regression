@@ -208,22 +208,23 @@ function ResultPanel({ run, summary, onChanged }) {
       {failed && !res.test_point_exists && <Alert severity="info" sx={{ mt: 1.5 }}>This test point has since been deleted, so its baseline can no longer be changed.</Alert>}
 
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: "divider", mt: 1.5, mb: 1.5 }}>
-        <Tab value="diff" label={`Differences (${res.diff_count})`} />
+        <Tab value="diff" label={`Differences (${res.diff_count.toLocaleString()})`} />
         <Tab value="actual" label="Actual (Oracle)" />
         <Tab value="baseline" label="Baseline" />
         <Tab value="sql" label="SQL" />
       </Tabs>
-      {tab === "diff" && (res.diffs.length === 0 ? (
+      {tab === "diff" && (res.diff_count === 0 ? (
         <Empty title="No differences">All {res.matched.toLocaleString()} rows match the baseline.</Empty>
       ) : (
         <DiffGrid
-          columns={res.columns} keyColumns={res.key_columns} diffs={res.diffs}
+          columns={res.columns} keyColumns={res.key_columns} total={res.diff_count} summary={res.diff_summary}
+          url={`/runs/${run.id}/results/${tid}/diffs?v=${stamp}`}
           onAcceptRow={canAccept ? (diff) => setAccept({ scope: "row", diff }) : undefined}
           onAcceptCell={canAccept ? (diff, column) => setAccept({ scope: "cell", diff, column }) : undefined}
         />
       ))}
-      {tab === "actual" && <DataTable columns={res.columns} rows={res.actual_rows} keyColumns={res.key_columns} label="Actual rows" />}
-      {tab === "baseline" && <DataTable columns={res.columns} rows={res.expected_rows} keyColumns={res.key_columns} label="Baseline rows" />}
+      {tab === "actual" && <DataTable columns={res.columns} url={`/runs/${run.id}/results/${tid}/rows?side=actual&v=${stamp}`} total={res.actual_count} keyColumns={res.key_columns} label="Actual rows" />}
+      {tab === "baseline" && <DataTable columns={res.columns} url={`/runs/${run.id}/results/${tid}/rows?side=expected&v=${stamp}`} total={res.expected_count} keyColumns={res.key_columns} label="Baseline rows" />}
       {tab === "sql" && (
         <Box sx={{ fontFamily: MONO, fontSize: 12.5, bgcolor: "#f8fafc", border: 1, borderColor: "divider", borderRadius: 1, p: 1.5, whiteSpace: "pre-wrap" }}>
           {res.sql || "No SQL recorded for this test point."}

@@ -85,6 +85,9 @@ def build_excel(run: dict, results: list[dict]) -> bytes:
                     if col in d["cells"]:
                         sh.cell(row=sh.max_row, column=4 + i).fill = FILLS[d["type"]]
         sh.freeze_panes = "D2"
+        if r.get("diff_count", 0) > len(r["diffs"]):
+            sh.append([])
+            sh.append([f"Showing the first {len(r['diffs']):,} of {r['diff_count']:,} differing rows."])
         if r.get("ai_explanation"):
             sh.append([])
             sh.append(["AI analysis"])
@@ -151,8 +154,8 @@ def build_pdf(run: dict, results: list[dict]) -> bytes:
         dt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
                                 ("GRID", (0, 0), (-1, -1), 0.3, grid), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
         els.append(dt)
-        if len(r["diffs"]) > MAX_PDF_DIFFS:
-            els.append(Paragraph(f"{len(r['diffs']) - MAX_PDF_DIFFS} more differing rows are listed in the Excel "
+        if r.get("diff_count", 0) > MAX_PDF_DIFFS:
+            els.append(Paragraph(f"{r['diff_count'] - MAX_PDF_DIFFS:,} more differing rows are listed in the Excel "
                                  "export.", small))
         els.append(Spacer(1, 10))
 

@@ -10,10 +10,11 @@ import re
 
 import oracledb
 
-from .importer import MAX_ROWS
+from ..limits import MAX_ROWS
 
 oracledb.defaults.fetch_lobs = False  # CLOB and BLOB columns arrive as str and bytes
 
+FETCH_BATCH = 5000
 CONNECT_SECONDS = 20
 QUERY_SECONDS = 300
 _LEADING_COMMENTS = re.compile(r"^(\s*(--[^\n]*\n|/\*.*?\*/))*\s*", re.S)
@@ -162,10 +163,16 @@ async def fetch(conn: dict, sql: str, limit: int = MAX_ROWS) -> tuple[list[str],
         connection.call_timeout = QUERY_SECONDS * 1000
         cursor = connection.cursor()
         try:
-            cursor.arraysize = 1000
+            # Large batches cut the number of network round trips for big results.
+            cursor.arraysize = cursor.prefetchrows = min(FETCH_BATCH, limit + 1)
             await asyncio.wait_for(cursor.execute(statement), QUERY_SECONDS + 10)
             returned = [d[0] for d in cursor.description or []]
-            raw = await asyncio.wait_for(cursor.fetchmany(limit + 1), QUERY_SECONDS + 10)
+            raw = []
+            while len(raw) <= limit:
+                batch = await asyncio.wait_for(cursor.fetchmany(min(FETCH_BATCH, limit + 1 - len(raw))), QUERY_SECONDS + 10)
+                if not batch:
+                    break
+                raw.extend(batch)
         finally:
             cursor.close()
     except OracleError:
@@ -174,7 +181,8 @@ async def fetch(conn: dict, sql: str, limit: int = MAX_ROWS) -> tuple[list[str],
         raise OracleError(friendly(exc, conn)) from exc
     finally:
         await _close(connection)
-    return returned, [[normalize(v) for v in row] for row in raw[:limit]], len(raw) > limit
+    rows = await asyncio.to_thread(lambda: [[normalize(v) for v in row] for row in raw[:limit]])
+    return returned, rows, len(raw) > limit
 
 
 async def query(conn: dict, sql: str, columns: list[str]) -> list[list]:
