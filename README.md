@@ -7,6 +7,12 @@ for the Evolv accounting module.
 The business requirements are in [docs/requirements.md](docs/requirements.md). This repository
 implements **Phase 1**: the full user experience on a simulated runner.
 
+## Guides
+
+- [Set up on your own computer](docs/local-setup.md): step by step, no Docker, for non-developers
+- [User guide](docs/user-guide.md): how to use every screen
+- [Business requirements](docs/requirements.md)
+
 ## What it does
 
 | Area | Screens | Requirements |
