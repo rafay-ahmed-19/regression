@@ -116,6 +116,11 @@ async def update_test_point(test_point_id: str, body: TestPointUpdate):
         update["key_columns"] = [k.upper() for k in update["key_columns"] or []]
         if any(k not in tp["columns"] for k in update["key_columns"]):
             raise HTTPException(400, "Key columns must be chosen from the test point's columns")
+    for field in ("sheet_name", "name"):
+        if isinstance(update.get(field), str):
+            update[field] = update[field].strip()
+            if not update[field]:
+                raise HTTPException(400, f"{field} cannot be empty")
     if update.get("sheet_name"):
         await _check_unique(tp["suite_id"], update["sheet_name"], ignore_id=test_point_id)
     for field in ("sheet_name", "name", "tolerance"):

@@ -118,8 +118,12 @@ export default function SuiteDetail() {
     }
   };
   const removeInput = async (id) => {
-    await api(`/suites/${suiteId}/inputs/${id}`, { method: "DELETE" });
-    reload();
+    try {
+      await api(`/suites/${suiteId}/inputs/${id}`, { method: "DELETE" });
+      reload();
+    } catch (e) {
+      notify(e.message, "error");
+    }
   };
   const pointsOf = (stepId) => data.test_points.filter((t) => t.checkpoint_id === stepId);
   const checkpointIds = new Set(steps.filter((s) => s.type === "validate").map((s) => s.id));

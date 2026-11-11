@@ -7,6 +7,7 @@ from ..db import NO_ID, db, iso, now
 from ..schemas import ImportCommit, SheetPatch
 from ..services import importer
 from ..services.baselines import write_baseline
+from .suites import check_name_free
 
 router = APIRouter(tags=["import"])
 MAX_UPLOAD_BYTES = 60 * 1024 * 1024
@@ -39,7 +40,9 @@ async def create_import(files: list[UploadFile] = File(...), paths: list[str] = 
             raise HTTPException(413, "The folder is larger than 60 MB")
         blobs[paths[i] if i < len(paths) and paths[i] else (f.filename or f"file{i}")] = data
     try:
-        if len(blobs) == 1 and next(iter(blobs)).lower().endswith(".zip"):
+        # A lone zip is an archive of the folder, unless it was picked as a file inside a folder.
+        only = next(iter(blobs)) if len(blobs) == 1 else ""
+        if only.lower().endswith(".zip") and "/" not in only:
             zip_name, data = next(iter(blobs.items()))
             blobs = importer.expand_zip(data)
             fallback_name = zip_name.rsplit("/", 1)[-1].rsplit(".", 1)[0]
@@ -111,6 +114,7 @@ async def commit_import(draft_id: str, body: ImportCommit):
     if len(set(names)) != len(names):
         raise HTTPException(400, "Two included sheets have the same name. Exclude one of them.")
 
+    await check_name_free(body.name)
     suite = {"id": str(uuid.uuid4()), "name": body.name.strip(), "build_folder": body.build_folder.strip(),
              "description": body.description, "steps": draft["steps"], "inputs": [], "created_at": iso(),
              "updated_at": iso()}

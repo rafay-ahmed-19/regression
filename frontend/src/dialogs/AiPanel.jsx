@@ -62,13 +62,13 @@ export default function AiPanel({ open, onClose, runId, result, onSaved }) {
         <IconButton onClick={onClose} aria-label="Close analysis"><Close /></IconButton>
       </Stack>
       <Box sx={{ p: 2, overflow: "auto", flex: 1 }} aria-live="polite">
-        {state === "streaming" && !text && <Typography color="text.secondary">Reading the SQL, differences, changed files and history…</Typography>}
+        {state === "streaming" && !text && <Typography color="text.secondary">Analysing…</Typography>}
         {text && <Markdown text={text} />}
         {error && <Alert severity="error" sx={{ mt: text ? 2 : 0 }}>{error}</Alert>}
       </Box>
       <Stack direction="row" sx={{ p: 1.5, borderTop: 1, borderColor: "divider", alignItems: "center", gap: 1 }}>
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-          Only failing rows and columns are sent (up to 25 differences), never whole result sets.
+          Only failing rows are sent, up to 25 differences.
         </Typography>
         <Button onClick={start} disabled={state === "streaming"}>{error ? "Try again" : "Regenerate"}</Button>
       </Stack>

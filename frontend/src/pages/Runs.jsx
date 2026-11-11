@@ -54,11 +54,10 @@ export default function Runs() {
     <>
       <PageHeader
         title="Runs"
-        subtitle="Every run, newest first."
         actions={<Button variant="contained" startIcon={<PlayArrow />} onClick={() => setLaunch(true)}>New run</Button>}
       />
       <Stack direction="row" sx={{ gap: 1.5, mb: 1.5, alignItems: "center" }}>
-        <TextField select label="Suite" value={suite} onChange={(e) => setSuite(e.target.value)} sx={{ width: 220 }}>
+        <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suite) ? suite : ""} onChange={(e) => setSuite(e.target.value)} sx={{ width: 220 }}>
           <MenuItem value="">All suites</MenuItem>
           {(suites.data || []).map((s) => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
         </TextField>
@@ -76,7 +75,7 @@ export default function Runs() {
         )}
       </Stack>
       {loading && !data ? <Loading /> : error && !data ? <ErrorState error={error} onRetry={reload} /> : runs.length === 0 ? (
-        <Paper variant="outlined"><Empty title="No runs" action={<Button variant="contained" onClick={() => setLaunch(true)}>New run</Button>}>Launch a run on any branch or release.</Empty></Paper>
+        <Paper variant="outlined"><Empty title="No runs" action={<Button variant="contained" onClick={() => setLaunch(true)}>New run</Button>} /></Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined">
           <Table>

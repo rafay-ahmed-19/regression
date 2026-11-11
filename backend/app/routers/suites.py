@@ -22,6 +22,16 @@ async def load_suite(suite_id: str) -> dict:
     return suite
 
 
+async def suite_names(ignore_id: str | None = None) -> set[str]:
+    suites = await db.suites.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(None)
+    return {s["name"].strip().lower() for s in suites if s["id"] != ignore_id}
+
+
+async def check_name_free(name: str, ignore_id: str | None = None):
+    if name.strip().lower() in await suite_names(ignore_id):
+        raise HTTPException(409, f"A suite named '{name.strip()}' already exists")
+
+
 def _steps(body: SuiteIn) -> list[dict]:
     return [{**s.model_dump(), "id": s.id or str(uuid.uuid4())} for s in body.steps]
 
@@ -52,6 +62,7 @@ async def list_suites():
 
 @router.post("/suites", status_code=201)
 async def create_suite(body: SuiteIn):
+    await check_name_free(body.name)
     suite = {"id": str(uuid.uuid4()), "name": body.name.strip(), "build_folder": body.build_folder.strip(),
              "description": body.description, "steps": _steps(body), "inputs": [], "created_at": iso(),
              "updated_at": iso()}
@@ -71,6 +82,7 @@ async def get_suite(suite_id: str):
 @router.put("/suites/{suite_id}")
 async def update_suite(suite_id: str, body: SuiteIn):
     await load_suite(suite_id)
+    await check_name_free(body.name, ignore_id=suite_id)
     await db.suites.update_one({"id": suite_id}, {"$set": {
         "name": body.name.strip(), "build_folder": body.build_folder.strip(), "description": body.description,
         "steps": _steps(body), "updated_at": iso()}})
@@ -96,7 +108,10 @@ async def duplicate_suite(suite_id: str):
     """Copy a suite with its steps, test points and current baselines (as version 1)."""
     src = await load_suite(suite_id)
     step_ids = {s["id"]: str(uuid.uuid4()) for s in src["steps"]}
-    copy = {**src, "id": str(uuid.uuid4()), "name": f"{src['name']} (copy)", "inputs": [],
+    taken, name, n = await suite_names(), f"{src['name']} (copy)", 2
+    while name.lower() in taken:
+        name, n = f"{src['name']} (copy {n})", n + 1
+    copy = {**src, "id": str(uuid.uuid4()), "name": name, "inputs": [],
             "steps": [{**s, "id": step_ids[s["id"]]} for s in src["steps"]], "created_at": iso(),
             "updated_at": iso()}
     await db.suites.insert_one(dict(copy))

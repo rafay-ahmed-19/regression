@@ -47,7 +47,7 @@ export default function Layout() {
           ))}
         </Stack>
         <Box sx={{ p: 1.5 }}>
-          <Tooltip title="Phase 1: build steps and Oracle results are simulated per branch. Real execution arrives with the on-prem runner.">
+          <Tooltip title="Build steps and Oracle results are simulated per branch.">
             <Chip label="Simulated runner" variant="outlined" sx={{ color: "#fbbf24", borderColor: "#78591a", width: "100%" }} />
           </Tooltip>
         </Box>

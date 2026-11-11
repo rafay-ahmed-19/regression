@@ -36,9 +36,9 @@ export default function Compare() {
 
   return (
     <>
-      <PageHeader title="Build A vs B" subtitle="Compare the actual Oracle results of two runs of the same suite directly, without a baseline." />
+      <PageHeader title="Build A vs B" subtitle="Actual results of two runs of the same suite, compared without a baseline." />
       <Stack direction="row" sx={{ gap: 1.5, mb: 2, flexWrap: "wrap" }}>
-        <TextField select label="Suite" value={suite} onChange={(e) => setParams({ suite: e.target.value }, { replace: true })} sx={{ width: 220 }}>
+        <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suite) ? suite : ""} onChange={(e) => setParams({ suite: e.target.value }, { replace: true })} sx={{ width: 220 }}>
           {(suites.data || []).map((s) => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
         </TextField>
         {["a", "b"].map((side) => (
@@ -87,7 +87,7 @@ export default function Compare() {
               ))}
             </Paper>
             <Paper variant="outlined" sx={{ p: 2, minWidth: 0 }}>
-              {!item ? <Empty title="No differences">Every test point returned the same rows in both builds.</Empty> : item.diffs.length === 0 ? (
+              {!item ? <Empty title="No differences" /> : item.diffs.length === 0 ? (
                 <Empty title={`${item.sheet_name} is identical`}>{plural(item.matched, "row")} match between the two builds.</Empty>
               ) : (
                 <>

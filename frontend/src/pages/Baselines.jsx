@@ -72,9 +72,9 @@ export default function Baselines() {
 
   return (
     <>
-      <PageHeader title="Baselines" subtitle="Who changed which baseline, when and why. The latest change of each test point can be rolled back." />
+      <PageHeader title="Baselines" />
       <Stack direction="row" sx={{ gap: 1.5, mb: 1.5, alignItems: "center" }}>
-        <TextField select label="Suite" value={suite} onChange={(e) => set({ suite: e.target.value, test_point: "" })} sx={{ width: 220 }}>
+        <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suite) ? suite : ""} onChange={(e) => set({ suite: e.target.value, test_point: "" })} sx={{ width: 220 }}>
           <MenuItem value="">All suites</MenuItem>
           {(suites.data || []).map((s) => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
         </TextField>
@@ -85,7 +85,7 @@ export default function Baselines() {
         <Typography color="text.secondary">{plural(data?.length || 0, "change")}</Typography>
       </Stack>
       {loading && !data ? <Loading /> : error && !data ? <ErrorState error={error} onRetry={reload} /> : data.length === 0 ? (
-        <Paper variant="outlined"><Empty title="No baseline changes">Accepting a difference from a run adds an entry here.</Empty></Paper>
+        <Paper variant="outlined"><Empty title="No baseline changes" /></Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined">
           <Table>
@@ -129,7 +129,7 @@ export default function Baselines() {
           reload();
         }}
       >
-        The baseline returns to its v{rollback?.previous_version} rows, stored as a new version. The rollback is logged like any other change. Existing run results are not re-compared.
+        The baseline returns to its v{rollback?.previous_version} rows, stored as a new version. Existing run results are not re-compared.
       </AcceptDialog>
     </>
   );

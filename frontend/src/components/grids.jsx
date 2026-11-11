@@ -186,7 +186,7 @@ export function DiffGrid({ columns, keyColumns = [], diffs, sides = ["Baseline",
                           ...(canAccept ? { cursor: "pointer", "&:hover, &:focus-visible": { outline: "2px solid #d97706", outlineOffset: -2 } } : {}),
                         }}
                       >
-                        {values ? fmtCell(values[j]) : first && d.type === "extra" ? "" : ""}
+                        {values ? fmtCell(values[j]) : ""}
                       </Box>
                     );
                   })}
@@ -204,8 +204,8 @@ export function DiffGrid({ columns, keyColumns = [], diffs, sides = ["Baseline",
         </Frame>
       )}
       <Typography variant="caption" color="text.secondary">
-        Showing {plural(shown.length, "differing row")}{shown.length !== diffs.length ? ` of ${diffs.length}` : ""}.
-        {onAcceptCell && " Click a highlighted actual value to accept just that cell."}
+        {shown.length !== diffs.length && `Showing ${shown.length} of ${plural(diffs.length, "differing row")}. `}
+        {onAcceptCell && "Click a highlighted actual value to accept that cell."}
       </Typography>
     </Stack>
   );

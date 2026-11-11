@@ -41,7 +41,8 @@ export default function Catalogue() {
     setParams(next, { replace: true });
     setSelected([]);
   };
-  const allSelected = items.length > 0 && selected.length === items.length;
+  const chosen = selected.filter((id) => items.some((t) => t.id === id));
+  const allSelected = items.length > 0 && chosen.length === items.length;
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const remove = async (ids) => {
@@ -59,7 +60,6 @@ export default function Catalogue() {
     <>
       <PageHeader
         title="Test point catalogue"
-        subtitle="Every r-sheet across all suites: its query, keys, owner, baseline and recent health."
         actions={
           <>
             <Button variant="outlined" startIcon={<FileDownloadOutlined />} component="a" href={downloadUrl(`/test-points/export.csv?${query}`)}>Export CSV</Button>
@@ -72,34 +72,34 @@ export default function Catalogue() {
           placeholder="Search sheet, name, SQL or owner" value={q} onChange={(e) => setQ(e.target.value)} sx={{ width: 320 }}
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }, htmlInput: { "aria-label": "Search test points" } }}
         />
-        <TextField select label="Suite" value={suite} onChange={(e) => setFilter("suite", e.target.value)} sx={{ width: 220 }}>
+        <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suite) ? suite : ""} onChange={(e) => setFilter("suite", e.target.value)} sx={{ width: 220 }}>
           <MenuItem value="">All suites</MenuItem>
           {(suites.data || []).map((s) => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
         </TextField>
-        <TextField select label="Tag" value={tag} onChange={(e) => setFilter("tag", e.target.value)} sx={{ width: 160 }}>
+        <TextField select label="Tag" value={(data?.tags || []).includes(tag) ? tag : ""} onChange={(e) => setFilter("tag", e.target.value)} sx={{ width: 160 }}>
           <MenuItem value="">All tags</MenuItem>
           {(data?.tags || []).map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
         </TextField>
         <Typography color="text.secondary">{plural(items.length, "test point")}</Typography>
         <Box sx={{ flex: 1 }} />
-        {selected.length > 0 && (
+        {chosen.length > 0 && (
           <Stack direction="row" sx={{ gap: 1, alignItems: "center" }}>
-            <Typography sx={{ fontWeight: 600 }}>{selected.length} selected</Typography>
+            <Typography sx={{ fontWeight: 600 }}>{chosen.length} selected</Typography>
             <Button variant="outlined" onClick={() => setDialog({ type: "bulk" })}>Edit selected</Button>
-            <Button variant="outlined" color="error" onClick={() => setDialog({ type: "delete", ids: selected })}>Delete selected</Button>
+            <Button variant="outlined" color="error" onClick={() => setDialog({ type: "delete", ids: chosen })}>Delete selected</Button>
           </Stack>
         )}
       </Stack>
 
       {loading && !data ? <Loading /> : error && !data ? <ErrorState error={error} onRetry={reload} /> : items.length === 0 ? (
-        <Paper variant="outlined"><Empty title="No test points match">Change the search or filters, or add a test point.</Empty></Paper>
+        <Paper variant="outlined"><Empty title="No test points match" /></Paper>
       ) : (
         <TableContainer component={Paper} variant="outlined">
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell padding="checkbox">
-                  <Checkbox checked={allSelected} indeterminate={selected.length > 0 && !allSelected} onChange={() => setSelected(allSelected ? [] : items.map((t) => t.id))} slotProps={{ input: { "aria-label": "Select all" } }} />
+                  <Checkbox checked={allSelected} indeterminate={chosen.length > 0 && !allSelected} onChange={() => setSelected(allSelected ? [] : items.map((t) => t.id))} slotProps={{ input: { "aria-label": "Select all" } }} />
                 </TableCell>
                 <TableCell>Sheet / name</TableCell><TableCell>Suite</TableCell><TableCell>Module</TableCell><TableCell>Keys</TableCell><TableCell>Tags</TableCell>
                 <TableCell>Owner</TableCell><TableCell align="right">± Tol.</TableCell><TableCell>Baseline</TableCell><TableCell>Last result</TableCell><TableCell>Pass rate</TableCell><TableCell />
@@ -152,7 +152,7 @@ export default function Catalogue() {
         open={dialog?.type === "add" || dialog?.type === "edit"} testPoint={dialog?.type === "edit" ? dialog.testPoint : null}
         suites={suites.data || []} tags={data?.tags || []} defaultSuite={suite} onClose={() => setDialog(null)} onSaved={reload}
       />
-      <BulkEditDialog open={dialog?.type === "bulk"} ids={selected} tags={data?.tags || []} onClose={() => setDialog(null)} onSaved={reload} />
+      <BulkEditDialog open={dialog?.type === "bulk"} ids={chosen} tags={data?.tags || []} onClose={() => setDialog(null)} onSaved={reload} />
       <ConfirmDialog
         open={dialog?.type === "delete"} onClose={() => setDialog(null)} onConfirm={() => remove(dialog.ids)}
         title={dialog?.name ? `Delete ${dialog.name}?` : `Delete ${plural(dialog?.ids?.length || 0, "test point")}?`}

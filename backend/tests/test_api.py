@@ -400,3 +400,33 @@ async def test_explain_without_credentials_reports_cleanly(seeded):
     run, fx = await failing_run(seeded)
     r = await seeded.post(f"/api/runs/{run['id']}/results/{fx['test_point_id']}/explain")
     assert r.status_code == 200 and '"error"' in r.text
+
+
+async def test_folder_holding_only_a_data_zip_is_not_unpacked(client):
+    data = build_files()["loan_accrual/20.FULL_20260612_LOANS.zip"]
+    r = await client.post("/api/imports", files=[("files", ("20.FULL_20260612_LOANS.zip", data))],
+                          data={"paths": ["loads/20.FULL_20260612_LOANS.zip"]})
+    assert r.status_code == 201 and [s["type"] for s in r.json()["steps"]] == ["load_data"]
+    assert r.json()["ready"] and r.json()["sheets"] == []
+    done = await client.post(f"/api/imports/{r.json()['id']}/commit", json={"name": "loads"})
+    assert done.status_code == 201 and done.json()["test_points"] == 0
+
+
+async def test_test_point_names_are_trimmed_and_cannot_be_blank(seeded):
+    tp = (await seeded.get("/api/test-points?q=r_fx_rates")).json()["items"][0]
+    ok = await seeded.put(f"/api/test-points/{tp['id']}", json={"name": "  FX closing rates  "})
+    assert ok.json()["name"] == "FX closing rates"
+    assert (await seeded.put(f"/api/test-points/{tp['id']}", json={"sheet_name": "   "})).status_code == 400
+
+
+async def test_suite_names_are_unique(client):
+    a = (await client.post("/api/suites", json={"name": "Loans"})).json()
+    assert (await client.post("/api/suites", json={"name": " loans "})).status_code == 409
+    b = (await client.post("/api/suites", json={"name": "Other"})).json()
+    assert (await client.put(f"/api/suites/{b['id']}", json={"name": "Loans"})).status_code == 409
+    assert (await client.put(f"/api/suites/{a['id']}", json={"name": "Loans", "description": "x"})).status_code == 200
+    copies = [(await client.post(f"/api/suites/{a['id']}/duplicate")).json()["name"] for _ in range(2)]
+    assert copies == ["Loans (copy)", "Loans (copy 2)"]
+    draft = (await client.post("/api/imports", files=[("files", ("Loans.zip", build_zip()))])).json()
+    clash = await client.post(f"/api/imports/{draft['id']}/commit", json={"name": "Loans"})
+    assert clash.status_code == 409 and (await client.get(f"/api/imports/{draft['id']}")).status_code == 200

@@ -49,12 +49,12 @@ export default function LaunchRunDialog({ open, onClose, suiteId: initialSuite =
       <DialogTitle>New run</DialogTitle>
       <DialogContent>
         <Stack sx={{ gap: 2, pt: 1 }}>
-          <TextField select label="Suite" value={suiteId} onChange={(e) => setSuiteId(e.target.value)} fullWidth>
+          <TextField select label="Suite" value={(suites.data || []).some((s) => s.id === suiteId) ? suiteId : ""} onChange={(e) => setSuiteId(e.target.value)} fullWidth>
             {(suites.data || []).map((s) => (
               <MenuItem key={s.id} value={s.id}>{s.name} · {plural(s.test_point_count, "test point")}</MenuItem>
             ))}
           </TextField>
-          <TextField select label="Branch or release" value={branch} onChange={(e) => setBranch(e.target.value)} fullWidth>
+          <TextField select label="Branch or release" value={(branches.data || []).some((b) => b.name === branch) ? branch : ""} onChange={(e) => setBranch(e.target.value)} fullWidth>
             {(branches.data || []).map((b) => (
               <MenuItem key={b.name} value={b.name}>
                 <Mono sx={{ mr: 1 }}>{b.name}</Mono>

@@ -24,7 +24,7 @@ function parseRows(text) {
   return text.split("\n").map((l) => l.trimEnd()).filter(Boolean).map((line) =>
     line.split(line.includes("\t") ? "\t" : ",").map((v) => {
       const t = v.trim();
-      return t !== "" && !Number.isNaN(Number(t)) ? Number(t) : t;
+      return /^-?(0|[1-9]\d*)(\.\d+)?$/.test(t) ? Number(t) : t;
     })
   );
 }
@@ -75,7 +75,7 @@ export function TestPointDialog({ open, testPoint, suites, tags, defaultSuite, o
       <DialogTitle>{editing ? `Edit ${testPoint.sheet_name}` : "Add test point"}</DialogTitle>
       <DialogContent dividers>
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: "1fr 1fr" }}>
-          <TextField select label="Suite" value={f.suite_id} onChange={(e) => set({ suite_id: e.target.value, checkpoint_id: "" })} disabled={editing}>
+          <TextField select label="Suite" value={suites.some((s) => s.id === f.suite_id) ? f.suite_id : ""} onChange={(e) => set({ suite_id: e.target.value, checkpoint_id: "" })} disabled={editing}>
             {suites.map((s) => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
           </TextField>
           <TextField select label="Checkpoint (validate step)" value={checkpoints.some((c) => c.id === f.checkpoint_id) ? f.checkpoint_id : ""} onChange={(e) => set({ checkpoint_id: e.target.value })}>
@@ -89,10 +89,10 @@ export function TestPointDialog({ open, testPoint, suites, tags, defaultSuite, o
           <TextField label="Oracle SQL" value={f.sql} onChange={(e) => set({ sql: e.target.value })} multiline minRows={4} sx={{ gridColumn: "1 / -1" }} slotProps={mono} />
           <TextField
             label="Columns (comma separated)" value={f.columnsText} onChange={(e) => set({ columnsText: e.target.value })} required disabled={editing}
-            helperText={editing ? "Columns are fixed after creation." : "In the order the query returns them."} sx={{ gridColumn: "1 / -1" }} slotProps={mono}
+            helperText={editing ? "Columns are fixed after creation." : undefined} sx={{ gridColumn: "1 / -1" }} slotProps={mono}
           />
           <Box sx={{ gridColumn: "1 / -1" }}>
-            <Typography variant="caption" color="text.secondary">Key columns identify a row, so row order never causes a failure. With none, rows are matched by position.</Typography>
+            <Typography variant="caption" color="text.secondary">Key columns. With none, rows are matched by position.</Typography>
             <Stack direction="row" sx={{ gap: 0.5, flexWrap: "wrap", mt: 0.5 }}>
               {columns.length === 0 && <Typography variant="caption" color="text.secondary">Enter columns first.</Typography>}
               {columns.map((c) => {
@@ -104,16 +104,16 @@ export function TestPointDialog({ open, testPoint, suites, tags, defaultSuite, o
               })}
             </Stack>
           </Box>
-          <TextField label="Numeric tolerance (±)" type="number" value={f.tolerance} onChange={(e) => set({ tolerance: e.target.value })} slotProps={{ htmlInput: { min: 0, step: "any" } }} helperText="Numeric differences up to this size count as equal." />
+          <TextField label="Numeric tolerance (±)" type="number" value={f.tolerance} onChange={(e) => set({ tolerance: e.target.value })} slotProps={{ htmlInput: { min: 0, step: "any" } }} />
           <TagInput label="Tags" value={f.tags} onChange={(v) => set({ tags: v })} options={tags} />
           <Box sx={{ gridColumn: "1 / -1" }}>
-            <TagInput label="Impacted-by paths" value={f.impacted_by} onChange={(v) => set({ impacted_by: v })} helperText="Path prefixes such as src/fx/. A changed file under any of them marks this test point as impacted. Press Enter after each path." />
+            <TagInput label="Impacted-by paths" value={f.impacted_by} onChange={(v) => set({ impacted_by: v })} helperText="Path prefixes such as src/fx/. Press Enter after each." />
           </Box>
           {!editing && (
             <TextField
               label="Expected rows (optional)" value={f.rowsText} onChange={(e) => set({ rowsText: e.target.value })} multiline minRows={3} maxRows={8} sx={{ gridColumn: "1 / -1" }} slotProps={mono}
               error={badRow >= 0}
-              helperText={badRow >= 0 ? `Row ${badRow + 1} has ${rows[badRow].length} values but there are ${plural(columns.length, "column")}.` : "Paste from Excel or as CSV, one row per line, without the header. These become baseline version 1. Left empty, sample rows are generated."}
+              helperText={badRow >= 0 ? `Row ${badRow + 1} has ${rows[badRow].length} values but there are ${plural(columns.length, "column")}.` : "Paste from Excel or as CSV, without the header. Left empty, sample rows are generated."}
             />
           )}
         </Box>
@@ -154,7 +154,7 @@ export function BulkEditDialog({ open, ids, tags, onClose, onSaved }) {
       <DialogTitle>Edit {plural(ids.length, "test point")}</DialogTitle>
       <DialogContent>
         <Stack sx={{ gap: 2, pt: 1 }}>
-          <Typography color="text.secondary">Fields left empty are not changed.</Typography>
+          <Typography color="text.secondary">Empty fields are left unchanged.</Typography>
           <TextField label="Owner" value={f.owner} onChange={(e) => setF({ ...f, owner: e.target.value })} />
           <TextField label="Module" value={f.module} onChange={(e) => setF({ ...f, module: e.target.value })} />
           <TextField label="Numeric tolerance (±)" type="number" value={f.tolerance} onChange={(e) => setF({ ...f, tolerance: e.target.value })} slotProps={{ htmlInput: { min: 0, step: "any" } }} />

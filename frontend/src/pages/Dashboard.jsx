@@ -32,21 +32,20 @@ export default function Dashboard() {
     <>
       <PageHeader
         title="Regression overview"
-        subtitle="Health of every suite across branches and releases."
         actions={<Button variant="contained" startIcon={<PlayArrow />} onClick={() => setLaunch(true)}>New run</Button>}
       />
       <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", mb: 2 }}>
         <Kpi label="Total runs" value={k.total_runs} />
-        <Kpi label="Pass rate" value={k.pass_rate == null ? "-" : `${k.pass_rate}%`} hint="of test point results" tone={k.pass_rate != null && k.pass_rate < 90 ? STATUS.flaky.fg : undefined} />
-        <Kpi label="Avg duration" value={fmtDuration(k.avg_duration_ms)} hint="per run" />
+        <Kpi label="Pass rate" value={k.pass_rate == null ? "-" : `${k.pass_rate}%`} tone={k.pass_rate != null && k.pass_rate < 90 ? STATUS.flaky.fg : undefined} />
+        <Kpi label="Avg duration" value={fmtDuration(k.avg_duration_ms)} />
         <Kpi label="Open failures" value={k.open_failures} hint={k.open_failures ? `in ${k.open_failure_runs} latest branch run${k.open_failure_runs === 1 ? "" : "s"}` : "latest runs are green"} tone={k.open_failures ? STATUS.failed.fg : STATUS.passed.fg} />
         <Kpi label="Flaky points" value={k.flaky_points} tone={k.flaky_points ? STATUS.flaky.fg : undefined} />
         <Kpi label="Test points" value={k.test_points} />
-        <Kpi label="Baseline updates" value={k.baseline_updates} hint="accepted or rolled back" />
+        <Kpi label="Baseline updates" value={k.baseline_updates} />
       </Box>
 
       {trend.length === 0 ? (
-        <Panel><Empty title="No runs yet" action={<Button variant="contained" onClick={() => setLaunch(true)}>Start the first run</Button>}>Launch a run to see results here.</Empty></Panel>
+        <Panel><Empty title="No runs yet" action={<Button variant="contained" onClick={() => setLaunch(true)}>Start the first run</Button>} /></Panel>
       ) : (
         <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", lg: "minmax(0, 3fr) minmax(0, 2fr)" } }}>
           <Panel title="Test points per run" action={<Typography variant="caption" color="text.secondary">last {trend.length} runs, oldest first</Typography>}>

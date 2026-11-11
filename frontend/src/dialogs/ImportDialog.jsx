@@ -59,13 +59,13 @@ function SheetRow({ draftId, sheet, onChange }) {
               <Stack direction="row" sx={{ gap: 1.5, alignItems: "center", flexWrap: "wrap" }}>
                 <TextField
                   label="SQL row" type="number" sx={{ width: 110 }} defaultValue={sheet.sql_row ?? ""}
-                  onBlur={(e) => patch({ sql_row: Number(e.target.value) || 0 })} slotProps={{ htmlInput: { min: 0 } }}
+                  onBlur={(e) => (Number(e.target.value) || 0) !== (sheet.sql_row || 0) && patch({ sql_row: Number(e.target.value) || 0 })} slotProps={{ htmlInput: { min: 0 } }}
                 />
                 <TextField
                   label="Header row" type="number" sx={{ width: 110 }} defaultValue={sheet.header_row ?? ""}
-                  onBlur={(e) => Number(e.target.value) > 0 && patch({ header_row: Number(e.target.value) })} slotProps={{ htmlInput: { min: 1 } }}
+                  onBlur={(e) => Number(e.target.value) > 0 && Number(e.target.value) !== sheet.header_row && patch({ header_row: Number(e.target.value) })} slotProps={{ htmlInput: { min: 1 } }}
                 />
-                <Typography variant="caption" color="text.secondary">Row numbers as shown in Excel. Changing them re-reads the sheet.</Typography>
+                <Typography variant="caption" color="text.secondary">Row numbers as shown in Excel.</Typography>
               </Stack>
               {sheet.sql && (
                 <Box sx={{ fontFamily: MONO, fontSize: 12, bgcolor: "#fff", border: 1, borderColor: "divider", borderRadius: 1, p: 1, whiteSpace: "pre-wrap" }}>{sheet.sql}</Box>
@@ -175,8 +175,8 @@ export default function ImportDialog({ open, onClose }) {
         {!draft ? (
           <Stack sx={{ gap: 2 }}>
             <Typography color="text.secondary">
-              Pick an existing build folder. Numbered items become ordered steps, and every sheet whose name starts with
-              <Mono> r </Mono> in an <Mono>o_validation</Mono> workbook becomes a test point with its expected rows as baseline version 1.
+              Numbered items become ordered steps. Every sheet starting with <Mono>r</Mono> in an <Mono>o_validation</Mono> workbook
+              becomes a test point, and its expected rows become baseline version 1.
             </Typography>
             <Stack direction="row" sx={{ gap: 1.5 }}>
               <Button variant="contained" startIcon={<FolderOpenOutlined />} onClick={() => folderInput.current.click()} disabled={busy}>Choose folder</Button>
@@ -184,12 +184,6 @@ export default function ImportDialog({ open, onClose }) {
             </Stack>
             <input ref={folderInput} type="file" hidden webkitdirectory="" directory="" multiple onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
             <input ref={zipInput} type="file" hidden accept=".zip" onChange={(e) => { upload(e.target.files); e.target.value = ""; }} />
-            <Box component="ul" sx={{ m: 0, pl: 2.5, color: "text.secondary", "& li": { mb: 0.5 } }}>
-              <li>Sub-folder of <Mono>.sql</Mono> files → setup SQL step</li>
-              <li><Mono>.zip</Mono> → data-load step (mode, COB date and source from the file name)</li>
-              <li><Mono>.properties</Mono> → run-job step with its keys and values</li>
-              <li><Mono>o_validation*.xls(x)</Mono> → validate checkpoint, up to 5,000 rows per sheet</li>
-            </Box>
           </Stack>
         ) : (
           <Stack sx={{ gap: 2.5 }}>

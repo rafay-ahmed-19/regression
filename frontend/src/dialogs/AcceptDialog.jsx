@@ -39,10 +39,9 @@ export default function AcceptDialog({ open, title, children, confirmLabel = "Ac
         <Stack sx={{ gap: 2, pt: 0.5 }}>
           <Typography color="text.secondary">{children}</Typography>
           {error && <Alert severity="error">{error}</Alert>}
-          <TextField label="Your name" value={user} onChange={(e) => setName(e.target.value)} required autoFocus={!user} helperText="Recorded in the baseline history." />
+          <TextField label="Your name" value={user} onChange={(e) => setName(e.target.value)} required autoFocus={!user} />
           <TextField
             label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} required multiline minRows={2} autoFocus={!!user}
-            placeholder="Why is this change expected? e.g. the ticket or release note that explains it"
           />
         </Stack>
       </DialogContent>

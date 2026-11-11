@@ -66,7 +66,6 @@ export default function Suites() {
     <>
       <PageHeader
         title="Suites"
-        subtitle="One suite per build folder: its ordered steps and the test points it validates."
         actions={
           <>
             <Button variant="outlined" startIcon={<DriveFolderUpload />} onClick={() => setDialog("import")}>Import test folder</Button>
@@ -77,7 +76,7 @@ export default function Suites() {
       {loading && !data ? <Loading /> : error && !data ? <ErrorState error={error} onRetry={reload} /> : data.length === 0 ? (
         <Paper variant="outlined">
           <Empty title="No suites yet" action={<Button variant="contained" onClick={() => setDialog("import")}>Import test folder</Button>}>
-            Import an existing build folder to turn its steps and validation sheets into a suite, or create one from scratch.
+            Import an existing build folder or create a suite from scratch.
           </Empty>
         </Paper>
       ) : (

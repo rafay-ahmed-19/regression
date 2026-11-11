@@ -20,9 +20,7 @@ export function fmtDuration(ms) {
 }
 
 export function fmtCell(v) {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "number" && !Number.isInteger(v)) return String(v);
-  return String(v);
+  return v === null || v === undefined ? "" : String(v);
 }
 
 export function fmtBytes(n) {

@@ -3,7 +3,6 @@ import { Link as RouterLink, useNavigate, useParams, useSearchParams } from "rea
 import {
   Alert, Box, Breadcrumbs, Button, Chip, Collapse, LinearProgress, Link, Paper, Stack, Tab, Tabs, Tooltip, Typography,
 } from "@mui/material";
-import AutoAwesome from "@mui/icons-material/AutoAwesomeOutlined";
 import CheckCircle from "@mui/icons-material/CheckCircle";
 import Cancel from "@mui/icons-material/Cancel";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
@@ -132,7 +131,7 @@ function HistoryStrip({ history, runId, testPointId }) {
           </Tooltip>
         ))}
       </Stack>
-      <Typography variant="caption" color="text.secondary">oldest → newest, all branches</Typography>
+      <Typography variant="caption" color="text.secondary">oldest → newest</Typography>
     </Stack>
   );
 }
@@ -149,7 +148,7 @@ function ResultPanel({ run, summary, onChanged }) {
   useEffect(() => setTab("diff"), [tid]);
 
   if (ACTIVE.includes(summary.status)) {
-    return <Paper variant="outlined"><Empty title={summary.status === "running" ? "Comparing…" : "Queued"}>Results appear here as soon as this test point has been compared.</Empty></Paper>;
+    return <Paper variant="outlined"><Empty title={summary.status === "running" ? "Comparing…" : "Queued"} /></Paper>;
   }
   if (summary.status === "error") return <Alert severity="error">This test point was not compared because the run stopped with an error.</Alert>;
   if (loading && !res) return <Loading />;
@@ -175,7 +174,7 @@ function ResultPanel({ run, summary, onChanged }) {
           </Stack>
           <Typography color="text.secondary">{res.name}{res.module ? ` · ${res.module}` : ""}</Typography>
         </Box>
-        {failed && <Button variant="outlined" startIcon={<AutoAwesome />} onClick={() => setAi(true)}>Analyse failure</Button>}
+        {failed && <Button variant="outlined" onClick={() => setAi(true)}>Analyse failure</Button>}
         {canAccept && <Button variant="contained" onClick={() => setAccept({ scope: "test_point" })}>Accept test point</Button>}
       </Stack>
       <Stack direction="row" sx={{ gap: 1, mt: 1.5, flexWrap: "wrap", alignItems: "center" }}>
@@ -222,7 +221,6 @@ function ResultPanel({ run, summary, onChanged }) {
         {accept?.scope === "cell" && <>The baseline value of <Mono>{accept.column}</Mono> on this row becomes <Mono>{String(accept.diff.actual[res.columns.indexOf(accept.column)])}</Mono> (was <Mono>{String(accept.diff.expected[res.columns.indexOf(accept.column)])}</Mono>).</>}
         {accept?.scope === "row" && (accept.diff.type === "missing" ? "This row is removed from the baseline." : accept.diff.type === "extra" ? "This row is added to the baseline." : `The baseline row is replaced with the actual values (${plural(accept.diff.cells.length, "cell")} change).`)}
         {accept?.scope === "test_point" && `All ${plural(res.actual_count, "actual row")} become baseline v${res.baseline_version + 1}, replacing ${plural(res.diff_count, "differing row")}.`}
-        {" "}The result is re-compared straight away and the change can be rolled back from Baselines.
       </AcceptDialog>
       <AiPanel open={ai} onClose={() => setAi(false)} runId={run.id} result={res} onSaved={reload} />
     </Paper>
@@ -264,7 +262,7 @@ export default function RunDetail() {
         <Typography color="text.primary" sx={{ fontSize: 12 }}>{run.suite_name} · {run.branch}</Typography>
       </Breadcrumbs>
       <PageHeader
-        title={<Stack direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>{run.suite_name}<StatusChip status={run.status} />{run.impacted_only && <Chip label="Impacted only" variant="outlined" />}</Stack>}
+        title={<Stack component="span" direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>{run.suite_name}<StatusChip status={run.status} />{run.impacted_only && <Chip label="Impacted only" variant="outlined" />}</Stack>}
         subtitle={<><Mono>{run.branch}</Mono> @ <Mono>{run.commit}</Mono> · started {fmtDateTime(run.started_at)}{run.triggered_by ? ` by ${run.triggered_by}` : ""} · {active ? `${done} of ${run.total} compared` : `${fmtDuration(run.duration_ms)} · ${run.passed} passed, ${run.failed} failed`}</>}
         actions={
           <>
@@ -285,7 +283,7 @@ export default function RunDetail() {
       <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "280px minmax(0, 1fr)" }, alignItems: "start" }}>
         <ResultList run={run} selected={selected?.test_point_id} onSelect={(id) => setParams({ tp: id }, { replace: true })} />
         {selected ? <ResultPanel key={selected.test_point_id} run={run} summary={selected} onChanged={reload} /> : (
-          <Paper variant="outlined"><Empty title="Run in progress">Steps run in order; test points are compared in parallel when their checkpoint is reached. Select a test point to follow it.</Empty></Paper>
+          <Paper variant="outlined"><Empty title="Run in progress" /></Paper>
         )}
       </Box>
       <AcceptDialog
@@ -296,7 +294,7 @@ export default function RunDetail() {
           reload();
         }}
       >
-        The actual rows of {failures.map((f) => f.sheet_name).join(", ")} become their new baselines. Each change is logged separately and can be rolled back from Baselines.
+        The actual rows of {failures.map((f) => f.sheet_name).join(", ")} become their new baselines.
       </AcceptDialog>
     </>
   );
