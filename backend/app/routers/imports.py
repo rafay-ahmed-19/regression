@@ -24,7 +24,8 @@ async def draft_view(draft: dict) -> dict:
     views = [importer.sheet_view(s) for s in sheets]
     return {"id": draft["id"], "name": draft["name"], "build_folder": draft["build_folder"],
             "steps": draft["steps"], "warnings": draft["warnings"], "sheets": views,
-            "ready": any(v["included"] for v in views) and not any(v["issues"] for v in views if v["included"])}
+            "ready": (not views or any(v["included"] for v in views))
+            and not any(v["issues"] for v in views if v["included"])}
 
 
 @router.post("/imports", status_code=201)
@@ -99,7 +100,7 @@ async def commit_import(draft_id: str, body: ImportCommit):
     draft = await load_draft(draft_id)
     sheets = await db.import_sheets.find({"draft_id": draft_id}, NO_ID).sort("order", 1).to_list(None)
     included = [s for s in sheets if s.get("included", True)]
-    if not included:
+    if sheets and not included:
         raise HTTPException(400, "Include at least one sheet")
     problems = {s["sheet_name"]: importer.sheet_view(s)["issues"] for s in included}
     problems = {k: v for k, v in problems.items() if v}
