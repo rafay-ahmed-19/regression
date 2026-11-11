@@ -5,7 +5,8 @@ result with a versioned baseline held in MongoDB. It replaces the Excel test dri
 for the Evolv accounting module.
 
 The business requirements are in [docs/requirements.md](docs/requirements.md). This repository
-implements **Phase 1**: the full user experience on a simulated runner.
+implements **Phase 1**: the full user experience, with results queried from an Oracle database where
+the build has already run, or simulated for demos.
 
 ## Guides
 
@@ -27,18 +28,39 @@ implements **Phase 1**: the full user experience on a simulated runner.
 | Build A vs B without a baseline | Build A vs B | FR-24 |
 | Versioned baselines, accept at cell / row / test point / run level, audit, rollback | Run detail, Baselines | FR-25 to FR-29 |
 | Dashboard KPIs, PDF and Excel sign-off reports | Dashboard, run detail | FR-30, FR-31 |
+| Oracle connections; runs that execute each test point's SQL on a chosen database; two databases compared with each other | Connections, New run, Build A vs B | FR-33 to FR-36 |
 
 Not built yet, as planned in the requirements: per-column ignore rules (FR-19), notifications and
-schedules (FR-32), login and roles, and the on-prem runner (Phases 2 and 3).
+schedules (FR-32), login and roles, and build execution through an on-prem runner (Phases 2 and 3).
+
+## Where results come from
+
+When you start a run you choose its source.
+
+- **An Oracle connection.** The Hub connects to that database, runs each test point's SQL as
+  written, and compares the returned rows with the baseline. The build must already have run there:
+  the suite's build steps are skipped. Add connections on the **Connections** page.
+- **Simulated results.** No database is contacted. Each test point's result is its stored source
+  rows, altered per branch so that some branches fail. This is for demos and for trying the workflow.
+
+Oracle access uses [python-oracledb](https://python-oracledb.readthedocs.io) in thin mode, so no
+Oracle client has to be installed. The machine running the Hub must be able to reach the database,
+for example with the company VPN connected.
 
 ## Phase 1 limits
 
-- **Execution is simulated.** No build runs and no Oracle query is sent. Each test point's "Oracle
-  result" is its stored source rows, altered per branch so that some branches fail. Everything that
-  stands in for the runner lives in `backend/app/services/simulator.py`.
-- The branch list and changed files are a fixed list in that same file.
-- There is no login. Anyone who can reach the app can use it; baseline changes record a typed name.
+- **The Hub does not execute builds.** It only queries a database where the build has already run.
+- Only `SELECT` and `WITH ... SELECT` statements are run. Values must be written into the SQL;
+  bind variables such as `:cob_date` are not filled in.
+- Results are compared up to 5,000 rows per test point.
+- **Oracle passwords are stored in MongoDB in plain text.** The API never returns them, but anyone
+  with access to the database can read them. Use a read-only Oracle account and restrict access to MongoDB.
+- Databases that require Oracle Native Network Encryption are not supported by thin mode.
+- There is no login. Anyone who can reach the app can use it, including the saved connections;
+  baseline changes record a typed name.
 - One baseline per test point, not per branch or release.
+- For simulated runs, the branch list and changed files are a fixed list in
+  `backend/app/services/simulator.py`.
 
 ## Run it
 
@@ -105,12 +127,13 @@ backend/
   app/
     main.py            app factory, start-up, static front end
     config.py db.py schemas.py
-    routers/           suites, imports, test_points, runs, baselines, insights
+    routers/           suites, imports, test_points, runs, baselines, insights, oracle_connections
     services/
       compare.py       key-based diff and acceptance of a row or cell
       importer.py      build folder → steps and sheets
       runner.py        run lifecycle and step execution
-      simulator.py     Phase 1 stand-in for Git, builds and Oracle
+      oracle.py        run a test point's SQL on Oracle and normalise the rows
+      simulator.py     simulated branches, build steps and results
       baselines.py     versioned baselines, audit trail, rollback
       stats.py         pass rates, history, flaky detection
       ai.py            failure analysis prompt and streaming
@@ -119,14 +142,14 @@ backend/
   scripts/make_sample_folder.py
   tests/
 frontend/
-  src/pages/           Dashboard, Suites, SuiteDetail, Catalogue, Runs, RunDetail, Compare, Baselines
+  src/pages/           Dashboard, Suites, SuiteDetail, Catalogue, Runs, RunDetail, Compare, Baselines, Connections
   src/dialogs/         import, launch run, accept, AI panel, test point forms
   src/components/      layout, grids, shared pieces
 ```
 
 MongoDB collections: `suites`, `suite_files`, `test_points`, `baselines`, `baseline_history`,
-`runs`, `run_results`, `import_drafts`, `import_sheets` (the last two expire after 24 hours) and
-`oracle_sim`, which holds the simulated Oracle rows and goes away with the Phase 2 runner.
+`runs`, `run_results`, `oracle_connections`, `import_drafts`, `import_sheets` (the last two expire
+after 24 hours) and `oracle_sim`, which holds the rows used by simulated runs.
 
 ## Tests
 
@@ -136,12 +159,12 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests run against an in-memory MongoDB stand-in, so no database is needed.
+The tests run against an in-memory MongoDB stand-in and a fake Oracle connection, so no database is needed.
 
 ## Moving to Phase 2
 
-The runner replaces three things, all called from `services/runner.py`: `simulator.get_branch`
-(branches, commits and changed files from Git), `simulator.step_log` / `step_seconds` (running a
-step in the build folder) and `simulator.simulate_actual` (executing a test point's SQL on Oracle).
-The hosted app cannot reach the company network, so the runner has to be installed inside it and
-post results to the Hub API.
+Phase 2 adds build execution. The pieces it replaces are in `services/simulator.py` and are called
+from `services/runner.py`: `get_branch` (branches, commits and changed files from Git) and
+`step_log` / `step_seconds` (running a step in the build folder). Querying Oracle is already real
+(`services/oracle.py`). A Hub hosted outside the company network cannot reach Oracle, so in that
+set-up the runner has to be installed inside the network and post results to the Hub API.

@@ -21,15 +21,16 @@ Evolv Regression Hub replaces the Excel test driver and TeamCity with one web ap
 
 ## 2. Scope
 
-Phase 1 (built) delivers the full user experience on a simulated runner; Phase 2 connects it to real Oracle and Git; Phase 3 adds automation and team controls.
+Phase 1 (built) delivers the full user experience, with results either queried from an Oracle database where the build has already run or produced by a simulator; Phase 2 adds build execution and Git; Phase 3 adds automation and team controls.
 
 | Phase | Status | Capabilities |
 | --- | --- | --- |
 | 1 — MVP | Built | Suites and steps, build-folder import, test point catalogue, runs with live progress, key-based diff, tolerance, baseline accept at 4 levels with audit and rollback, history and flaky detection, AI explanation, Build A vs B, impacted-only runs, PDF/XLSX sign-off export |
-| 2 — Real execution | Backlog (P0) | On-prem runner agent that checks out the branch, runs steps on the build folder, queries Oracle and posts results back; Git integration for real branches and changed files; data snapshot and restore |
+| 1b — Oracle results | Built | Saved Oracle connections; runs that execute each test point's SQL on a chosen database and compare the rows with the baseline; Build A vs B across two databases |
+| 2 — Build execution | Backlog (P0) | On-prem runner agent that checks out the branch and runs the steps on the build folder; Git integration for real branches and changed files; data snapshot and restore |
 | 3 — Automation and team | Backlog (P1–P2) | Login and roles (who may accept baselines), nightly and on-commit schedules, failure notifications (email/Teams/Slack), per-column ignore rules, data masking, per-checkpoint trends |
 
-**Out of scope for Phase 1.** Real build execution and real Oracle queries are simulated per branch. The branch list and changed files are static. There is no login: anyone with the link can use the app and the acceptance log records a typed name. One baseline per test point (not per branch).
+**Out of scope for Phase 1.** The Hub does not execute builds: an Oracle run assumes the build has already run on the chosen database and skips the build steps. Simulated runs remain for demos, with a static branch list and changed files. The Hub must be able to reach Oracle over the network (for example with the company VPN on). Oracle passwords are stored in MongoDB with the connection. There is no login: anyone with the link can use the app and the acceptance log records a typed name. One baseline per test point (not per branch).
 
 ## 3. Stakeholders and user roles
 
@@ -68,7 +69,7 @@ Every test point across all suites appears in one catalogue with its suite, modu
 
 ### 4.3 Launch a run
 
-**New run** asks for a suite and a branch or release. With **Run only impacted tests** on, the dialog lists the files changed on that branch and the test points they affect, so a feature branch can be checked in seconds (FR-12, FR-13).
+**New run** asks for a suite and where the results come from: a saved Oracle connection, or simulated results on a branch or release (FR-33, FR-34). For a simulated branch, with **Run only impacted tests** on, the dialog lists the files changed on that branch and the test points they affect, so a feature branch can be checked in seconds (FR-12, FR-13).
 
 &#91;image: Launch dialog: feature/fx-rounding selected, impacted-only on, 2 changed files mapped to r\_fx\_rates and r\_pnl\_summary\]
 
@@ -104,7 +105,7 @@ The Baselines page then shows who changed what, when and why. Opening an entry s
 
 ### 4.8 Compare two builds and monitor health
 
-Build A vs B compares two runs' Oracle results directly, without a baseline, which is useful before merging a branch (FR-24).
+Build A vs B compares two runs' Oracle results directly, without a baseline, which is useful before merging a branch (FR-24). **Compare two databases** runs the suite on two Oracle connections and compares them with each other (FR-35).
 
 &#91;image: Build A vs B: feature/fx-rounding vs main, 4 test points compared, 1 different\]
 
@@ -114,7 +115,7 @@ The dashboard summarises pass rate, open failures, flaky points and baseline upd
 
 ## 5. Functional requirements
 
-Thirty-two requirements across eight areas; all marked Must are built in Phase 1 unless noted.
+Thirty-six requirements across nine areas; all marked Must are built in Phase 1 unless noted.
 
 ### 5.1 Suites and steps (replaces the Excel driver)
 
@@ -188,9 +189,18 @@ Thirty-two requirements across eight areas; all marked Must are built in Phase 1
 | FR-31 | Export any run to PDF and Excel with failures first and a sign-off block. | Must |
 | FR-32 | Notifications (email/Teams/Slack) on failure with a link to the failure view; nightly and on-commit schedules. | Should (P1) |
 
+### 5.9 Oracle connections and results
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FR-33 | Users can save, edit, test and delete Oracle connections: name, host, port, service name or SID, user and password. The password is stored but never shown or returned again. | Must |
+| FR-34 | A run can use a saved connection. The Hub executes each test point's SQL on that database, takes the returned rows as the actual result and compares them with the baseline. Build steps are skipped because the build has already run there. SQL is run as written; values are part of the query, not bound at run time. | Must |
+| FR-35 | Build A vs B can run one suite on two Oracle connections and compare the two results with each other. | Must |
+| FR-36 | Only SELECT (or WITH ... SELECT) statements are executed. A query that fails is shown as an error on its test point with Oracle's message and does not stop the other test points. An unreachable database stops the run with a clear message. | Must |
+
 ## 6. Data and integrations
 
-All state lives in MongoDB; Oracle and Git are reached only through the Phase 2 on-prem runner.
+All state lives in MongoDB. Oracle is queried directly by the Hub for runs that use a saved connection; Git and build execution arrive with the Phase 2 on-prem runner.
 
 | Collection | Holds |
 | --- | --- |
@@ -198,19 +208,20 @@ All state lives in MongoDB; Oracle and Git are reached only through the Phase 2 
 | `test_points` | Sheet name, SQL, columns, key columns, tolerance, tags, owner, impacted-by paths, checkpoint |
 | `baselines` | Current expected rows and version per test point |
 | `baseline_history` | Every acceptance and rollback: scope, user, reason, version, before/after rows |
-| `runs` | Suite, branch, commit, changed files, step logs, counts, status, duration |
-| `run_results` | Per test point: expected and actual rows, diffs, matched count, status, AI explanation |
+| `runs` | Suite, branch or build label, source (Oracle connection or simulated), commit, changed files, step logs, counts, status, duration |
+| `oracle_connections` | Name, host, port, service name or SID, user, password |
+| `run_results` | Per test point: expected and actual rows, diffs, matched count, status, error message, AI explanation |
 | `import_drafts`, `import_sheets` | Folder imports under review; expire after 24 hours |
 
 | Integration | Phase 1 | Target |
 | --- | --- | --- |
-| Oracle (Evolv schema) | Simulated per branch | Runner executes each test point's SQL and returns rows |
+| Oracle (Evolv schema) | Hub runs each test point's SQL on a saved connection (python-oracledb, thin mode); a simulator remains for demos | Same, optionally through the on-prem runner |
 | Git / build folders | Static branch list and changed files | Real branches, commits and diff vs main |
 | Build execution | Simulated step timings and logs | Runner checks out the branch and runs steps in the build folder |
 | AI analysis | Claude Sonnet via the Anthropic API, streamed | Same; failing rows only |
 | Reports | PDF (reportlab), XLSX (openpyxl) | Same |
 
-The hosted app cannot reach the company network, so the runner must be installed inside it and push results to the Hub API.
+The Hub must run where it can reach Oracle: on a machine inside the company network or with the VPN connected. A Hub hosted outside the network cannot query Oracle directly; that case needs the Phase 2 runner installed inside the network, pushing results to the Hub API.
 
 ## 7. Non-functional requirements
 
@@ -219,9 +230,9 @@ The hosted app cannot reach the company network, so the runner must be installed
 | Usability | Dense engineering-tool layout; light theme; monospaced data grids; red/green/amber status; every failure reachable in 2–3 clicks from a run |
 | Performance | Test points within a checkpoint run in parallel; diff grid handles up to 5,000 rows per sheet with sticky headers |
 | Auditability | No baseline change without a logged user, time and reason; rollback is itself logged |
-| Security | Phase 1 has no login; Phase 3 adds sign-in and roles restricting who may accept baselines; data masking (P2) |
+| Security | Phase 1 has no login; Phase 3 adds sign-in and roles restricting who may accept baselines; data masking (P2). Oracle passwords are stored in MongoDB and never returned by the API; use a read-only Oracle account |
 | Data privacy | AI analysis sends only failing rows and columns (max 25 diffs), never whole datasets |
-| Reliability | A run that errors records the error and stops cleanly; partial imports expire after 24 hours |
+| Reliability | A run that errors records the error and stops cleanly; a failing query affects only its own test point; partial imports expire after 24 hours |
 | Tech stack | React 19 + MUI 9 + MUI X Charts front end; FastAPI + MongoDB back end |
 
 ## 8. Assumptions, open questions and glossary
@@ -236,7 +247,8 @@ The hosted app cannot reach the company network, so the runner must be installed
 
 - [ ] Should release branches have their own baseline separate from the dev baseline?
 - [ ] Who is allowed to accept baselines at run level, and does that need a second approver?
-- [ ] Where will the on-prem runner live, and which Oracle schema/credentials will it use?
+- [ ] Which Oracle account should regression use? A read-only account is recommended.
+- [ ] Where will the Phase 2 on-prem runner live?
 - [ ] Should test data be snapshotted and restored before each run so runs are repeatable?
 - [ ] Is TeamCity retired fully, or does it trigger Hub runs during the transition?
 

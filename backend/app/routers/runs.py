@@ -53,7 +53,8 @@ async def impact(suite_id: str, branch: str):
 
 @router.post("/runs", status_code=201)
 async def start_run(body: RunIn):
-    run = await runner.create_run(body.suite_id, body.branch, body.impacted_only, body.user.strip())
+    run = await runner.create_run(body.suite_id, body.branch, body.impacted_only, body.user.strip(),
+                                  connection_id=body.connection_id)
     runner.launch(run["id"])
     return run
 
@@ -79,8 +80,10 @@ async def get_run(run_id: str):
 @router.post("/runs/{run_id}/rerun", status_code=201)
 async def rerun(run_id: str):
     old = await load_run(run_id)
+    if old.get("connection_id") and not await db.oracle_connections.count_documents({"id": old["connection_id"]}):
+        raise HTTPException(409, "The Oracle connection used by this run has been deleted")
     run = await runner.create_run(old["suite_id"], old["branch"], old.get("impacted_only", False),
-                                  old.get("triggered_by", ""))
+                                  old.get("triggered_by", ""), connection_id=old.get("connection_id"))
     runner.launch(run["id"])
     return run
 

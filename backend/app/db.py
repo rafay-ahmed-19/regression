@@ -57,6 +57,7 @@ async def ensure_indexes():
     await db.runs.create_index([("started_at", DESCENDING)])
     await db.run_results.create_index([("run_id", ASCENDING), ("test_point_id", ASCENDING)], unique=True)
     await db.run_results.create_index([("test_point_id", ASCENDING)])
+    await db.oracle_connections.create_index([("id", ASCENDING)], unique=True)
     await db.import_drafts.create_index([("id", ASCENDING)], unique=True)
     await db.import_sheets.create_index([("draft_id", ASCENDING)])
     # Imports left in review are removed by MongoDB after 24 hours.

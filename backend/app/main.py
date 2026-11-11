@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .db import db, ensure_indexes
-from .routers import baselines, imports, insights, runs, suites, test_points
+from .routers import baselines, imports, insights, oracle_connections, runs, suites, test_points
 from .services import runner
 from .services.seed import seed_demo
 
@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
                   docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
                        allow_methods=["*"], allow_headers=["*"])
-    for module in (suites, imports, test_points, runs, baselines, insights):
+    for module in (suites, imports, test_points, runs, baselines, insights, oracle_connections):
         app.include_router(module.router, prefix="/api")
 
     @app.get("/api/health", tags=["meta"])

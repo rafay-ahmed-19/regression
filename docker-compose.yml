@@ -17,6 +17,7 @@ services:
       DB_NAME: regression_hub
       SEED_DEMO: "true"
       # Optional: enables the "Analyse failure" panel.
+      # Note: to reach Oracle over a VPN, the container must be able to route through it.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
 
 volumes:

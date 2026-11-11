@@ -29,6 +29,12 @@ export function fmtBytes(n) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/** Where a run's actual rows came from. */
+export const runSource = (run) => (run.mode === "oracle" ? `Oracle · ${run.connection_name}` : "Simulated");
+
+/** "branch @ commit", without the commit for Oracle runs that have none. */
+export const runBuild = (run) => (run.commit ? `${run.branch} @ ${run.commit}` : run.branch);
+
 export const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + "s"}`;
 
 export const STEP_TYPES = {

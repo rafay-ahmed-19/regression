@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Box, Chip, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Stack, Typography } from "@mui/material";
 import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
 import AccountTreeOutlined from "@mui/icons-material/AccountTreeOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import PlayCircleOutlined from "@mui/icons-material/PlayCircleOutlined";
 import CompareArrowsOutlined from "@mui/icons-material/CompareArrowsOutlined";
 import HistoryOutlined from "@mui/icons-material/HistoryOutlined";
+import StorageOutlined from "@mui/icons-material/StorageOutlined";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: DashboardOutlined, end: true },
@@ -14,6 +15,7 @@ const NAV = [
   { to: "/runs", label: "Runs", icon: PlayCircleOutlined },
   { to: "/compare", label: "Build A vs B", icon: CompareArrowsOutlined },
   { to: "/baselines", label: "Baselines", icon: HistoryOutlined },
+  { to: "/connections", label: "Connections", icon: StorageOutlined },
 ];
 
 export default function Layout() {
@@ -46,11 +48,6 @@ export default function Layout() {
             </Box>
           ))}
         </Stack>
-        <Box sx={{ p: 1.5 }}>
-          <Tooltip title="Build steps and Oracle results are simulated per branch.">
-            <Chip label="Simulated runner" variant="outlined" sx={{ color: "#fbbf24", borderColor: "#78591a", width: "100%" }} />
-          </Tooltip>
-        </Box>
       </Box>
       <Box component="main" sx={{ flex: 1, minWidth: 0, p: 3, maxWidth: 1560 }}>
         <Outlet />

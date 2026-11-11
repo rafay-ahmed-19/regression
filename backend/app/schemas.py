@@ -1,7 +1,7 @@
 """Request bodies."""
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 StepType = Literal["setup_sql", "load_data", "run_job", "unzip_inputs", "run_script", "validate"]
 Scope = Literal["cell", "row", "test_point", "run"]
@@ -87,9 +87,40 @@ class BulkUpdate(TestPointBase):
 
 class RunIn(BaseModel):
     suite_id: str
-    branch: str
+    # Simulated runs: a branch from the list. Oracle runs: a free label, optional.
+    branch: str = ""
     impacted_only: bool = False
     user: str = ""
+    # Set to run each test point's SQL on this Oracle database.
+    connection_id: str | None = None
+
+
+class OracleConnectionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(default=1521, ge=1, le=65535)
+    # Exactly one of service_name and sid.
+    service_name: str = ""
+    sid: str = ""
+    user: str = Field(min_length=1, max_length=128)
+    # Left empty on an update, the saved password is kept.
+    password: str = ""
+
+    @field_validator("name", "host", "service_name", "sid", "user")
+    @classmethod
+    def _strip(cls, v):
+        return v.strip()
+
+    @model_validator(mode="after")
+    def _one_target(self):
+        if bool(self.service_name) == bool(self.sid):
+            raise ValueError("Give either a service name or a SID")
+        return self
+
+
+class OracleConnectionTest(OracleConnectionIn):
+    # Test an edited connection with its saved password when none is typed.
+    id: str | None = None
 
 
 class AcceptIn(BaseModel):

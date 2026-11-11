@@ -11,7 +11,7 @@ import { api, useFetch } from "../api.js";
 import { ConfirmDialog, Empty, ErrorState, Loading, Mono, PageHeader, StatusChip } from "../components/Common.jsx";
 import { useNotify } from "../components/Notify.jsx";
 import LaunchRunDialog from "../dialogs/LaunchRunDialog.jsx";
-import { fmtDate, fmtDuration, plural } from "../format.js";
+import { fmtDate, fmtDuration, plural, runSource } from "../format.js";
 import { STATUS } from "../theme.js";
 
 const ACTIVE = ["queued", "running"];
@@ -87,7 +87,7 @@ export default function Runs() {
                     onChange={() => setSelected(chosen.length === deletable.length ? [] : deletable)} slotProps={{ input: { "aria-label": "Select all runs" } }}
                   />
                 </TableCell>
-                <TableCell>Status</TableCell><TableCell>Suite</TableCell><TableCell>Branch / release</TableCell><TableCell>Commit</TableCell>
+                <TableCell>Status</TableCell><TableCell>Suite</TableCell><TableCell>Branch / build</TableCell><TableCell>Source</TableCell>
                 <TableCell align="right">Passed</TableCell><TableCell align="right">Failed</TableCell><TableCell>Duration</TableCell><TableCell>Started</TableCell><TableCell />
               </TableRow>
             </TableHead>
@@ -104,10 +104,10 @@ export default function Runs() {
                       <Link component={RouterLink} to={`/runs/${r.id}`} underline="hover" sx={{ fontWeight: 600 }}>{r.suite_name}</Link>
                       {r.impacted_only && <Chip label="Impacted only" variant="outlined" sx={{ ml: 1, height: 20, fontSize: 11 }} />}
                     </TableCell>
-                    <TableCell><Mono>{r.branch}</Mono></TableCell>
-                    <TableCell><Mono sx={{ color: "text.secondary" }}>{r.commit}</Mono></TableCell>
+                    <TableCell><Mono>{r.branch}</Mono>{r.commit && <Mono sx={{ color: "text.secondary", ml: 1 }}>{r.commit}</Mono>}</TableCell>
+                    <TableCell sx={{ color: r.mode === "oracle" ? "text.primary" : "text.secondary" }}>{runSource(r)}</TableCell>
                     <TableCell align="right" sx={{ color: STATUS.passed.fg, fontWeight: 600 }}>{r.passed}</TableCell>
-                    <TableCell align="right" sx={{ color: r.failed ? STATUS.failed.fg : "text.secondary", fontWeight: 600 }}>{r.failed}</TableCell>
+                    <TableCell align="right" sx={{ color: r.failed || r.errors ? STATUS.failed.fg : "text.secondary", fontWeight: 600 }}>{r.failed}{r.errors ? ` + ${r.errors} err` : ""}</TableCell>
                     <TableCell>{active ? "…" : fmtDuration(r.duration_ms)}</TableCell>
                     <TableCell>{fmtDate(r.started_at)}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>

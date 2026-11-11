@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from ..config import get_settings
 from ..db import NO_ID, db, iso, now
-from . import simulator
+from . import oracle, simulator
 from .baselines import get_baseline
 from .compare import compare
 
@@ -29,13 +29,28 @@ async def select_test_points(suite_id: str, branch: dict, impacted_only: bool) -
 
 
 async def create_run(suite_id: str, branch_name: str, impacted_only: bool = False, user: str = "",
-                     started_at: datetime | None = None) -> dict:
+                     started_at: datetime | None = None, connection_id: str | None = None) -> dict:
+    """Create a queued run.
+
+    With `connection_id` the run queries that Oracle database and `branch_name` is a free
+    label for the build loaded there. Without it the run is simulated on a known branch.
+    """
     suite = await db.suites.find_one({"id": suite_id}, NO_ID)
     if not suite:
         raise HTTPException(404, "Suite not found")
-    branch = simulator.get_branch(branch_name)
-    if not branch:
-        raise HTTPException(400, f"Unknown branch or release '{branch_name}'")
+    connection = None
+    if connection_id:
+        connection = await db.oracle_connections.find_one({"id": connection_id}, {"_id": 0, "password": 0})
+        if not connection:
+            raise HTTPException(404, "Oracle connection not found")
+        if impacted_only:
+            raise HTTPException(400, "Impacted-only runs need a branch; they are not available for Oracle runs")
+        branch = {"name": branch_name.strip() or connection["name"], "type": "oracle", "commit": "",
+                  "changed_files": []}
+    else:
+        branch = simulator.get_branch(branch_name)
+        if not branch:
+            raise HTTPException(400, f"Unknown branch or release '{branch_name}'")
     tps = await select_test_points(suite_id, branch, impacted_only)
     if not tps:
         raise HTTPException(400, "No test points are impacted by the files changed on this branch"
@@ -58,7 +73,10 @@ async def create_run(suite_id: str, branch_name: str, impacted_only: bool = Fals
         "id": run_id, "suite_id": suite_id, "suite_name": suite["name"], "build_folder": suite.get("build_folder", ""),
         "branch": branch["name"], "branch_type": branch["type"], "commit": branch["commit"],
         "changed_files": branch["changed_files"], "impacted_only": impacted_only, "triggered_by": user,
-        "status": "queued", "steps": steps, "total": len(tps), "passed": 0, "failed": 0,
+        "mode": "oracle" if connection else "simulated",
+        "connection_id": connection["id"] if connection else None,
+        "connection_name": connection["name"] if connection else None,
+        "status": "queued", "steps": steps, "total": len(tps), "passed": 0, "failed": 0, "errors": 0,
         "started_at": iso(started_at), "finished_at": None, "duration_ms": None, "error": None,
     }
     results = [{
@@ -68,7 +86,7 @@ async def create_run(suite_id: str, branch_name: str, impacted_only: bool = Fals
         "checkpoint_id": t["checkpoint_id"] if t.get("checkpoint_id") in checkpoints else fallback["id"],
         "status": "queued", "expected_rows": [], "actual_rows": [], "diffs": [], "diff_count": 0, "matched": 0,
         "expected_count": 0, "actual_count": 0, "baseline_version": 0, "duration_ms": None,
-        "ai_explanation": None,
+        "ai_explanation": None, "error": None,
     } for t in tps]
     await db.runs.insert_one(dict(run))
     await db.run_results.insert_many([dict(r) for r in results])
@@ -82,14 +100,20 @@ def launch(run_id: str):
     task.add_done_callback(_tasks.discard)
 
 
-async def _compare_result(run: dict, result: dict) -> dict:
-    """Fetch the (simulated) Oracle rows for one test point and diff them against its baseline."""
+async def _compare_result(run: dict, result: dict, connection: dict | None) -> dict:
+    """Get the actual rows for one test point and diff them against its baseline.
+
+    The rows come from Oracle when the run has a connection, otherwise from the simulator.
+    """
     tid = result["test_point_id"]
     tp = await db.test_points.find_one({"id": tid}, NO_ID)
     if not tp:
         raise RuntimeError(f"Test point {result['sheet_name']} was deleted during the run")
-    sim = await db.oracle_sim.find_one({"test_point_id": tid}, NO_ID) or {"rows": [], "flaky": False}
-    actual = simulator.simulate_actual(tp, sim["rows"], sim.get("flaky", False), run["branch"], run["id"])
+    if connection:
+        actual = await oracle.query(connection, result["sql"], result["columns"])
+    else:
+        sim = await db.oracle_sim.find_one({"test_point_id": tid}, NO_ID) or {"rows": [], "flaky": False}
+        actual = simulator.simulate_actual(tp, sim["rows"], sim.get("flaky", False), run["branch"], run["id"])
     baseline = await get_baseline(tid)
     out = compare(result["columns"], result["key_columns"], baseline["rows"], actual, result["tolerance"])
     return {
@@ -128,6 +152,12 @@ async def execute_run(run_id: str, live: bool = True):
 
     try:
         await save_steps(status="running")
+        connection = None
+        if run.get("mode") == "oracle":
+            connection = await db.oracle_connections.find_one({"id": run["connection_id"]}, NO_ID)
+            if not connection:
+                raise RuntimeError("The Oracle connection used by this run has been deleted")
+            await oracle.check(connection)  # fail the run early when the database cannot be reached
         results = await db.run_results.find({"run_id": run_id}, {"_id": 0, "expected_rows": 0, "actual_rows": 0,
                                                                  "diffs": 0}).to_list(None)
         gate = asyncio.Semaphore(PARALLEL_QUERIES)
@@ -136,10 +166,18 @@ async def execute_run(run_id: str, live: bool = True):
             async with gate:
                 key = {"run_id": run_id, "test_point_id": result["test_point_id"]}
                 await db.run_results.update_one(key, {"$set": {"status": "running"}})
-                ms = await work(rng.uniform(*simulator.QUERY_SECONDS))
-                outcome = await _compare_result(run, result)
+                started = time.monotonic()
+                ms = 0 if connection else await work(rng.uniform(*simulator.QUERY_SECONDS))
+                try:
+                    outcome = await _compare_result(run, result, connection)
+                except oracle.OracleError as exc:
+                    # One bad query must not stop the others.
+                    outcome = {"status": "error", "error": str(exc)}
+                if connection:
+                    ms = int((time.monotonic() - started) * 1000)
                 await db.run_results.update_one(key, {"$set": {**outcome, "duration_ms": ms}})
-                await db.runs.update_one({"id": run_id}, {"$inc": {outcome["status"]: 1}})
+                counter = "errors" if outcome["status"] == "error" else outcome["status"]
+                await db.runs.update_one({"id": run_id}, {"$inc": {counter: 1}})
                 return ms
 
         for step in steps:
@@ -155,7 +193,14 @@ async def execute_run(run_id: str, live: bool = True):
                     continue
                 durations = await asyncio.gather(*(run_point(r) for r in points))
                 step["duration_ms"] = max(durations) if live else sum(durations) // PARALLEL_QUERIES
-                step["log"] = [f"Compared {len(points)} test point(s) against their baselines"]
+                source = f"Queried {connection['name']} and compared" if connection else "Compared"
+                step["log"] = [f"{source} {len(points)} test point(s) against their baselines"]
+            elif connection:
+                # The build was already executed on this database; only the checks run.
+                step["status"], step["duration_ms"] = "skipped", 0
+                step["log"] = ["Skipped: this run only queries a database where the build has already run"]
+                await save_steps()
+                continue
             else:
                 step["duration_ms"] = await work(simulator.step_seconds(step, rng))
                 step["log"] = simulator.step_log(step, run)
@@ -168,7 +213,10 @@ async def execute_run(run_id: str, live: bool = True):
         await db.runs.update_one({"id": run_id}, {"$set": {"finished_at": iso(finished), "duration_ms": duration}})
         await finalize_run(run_id)
     except Exception as exc:  # record the error and stop cleanly
-        log.exception("Run %s failed", run_id)
+        if isinstance(exc, oracle.OracleError):
+            log.warning("Run %s stopped: %s", run_id, exc)
+        else:
+            log.exception("Run %s failed", run_id)
         for step in steps:
             if step["status"] == "running":
                 step["status"] = "error"
@@ -176,7 +224,8 @@ async def execute_run(run_id: str, live: bool = True):
             elif step["status"] == "pending":
                 step["status"] = "skipped"
         await db.run_results.update_many({"run_id": run_id, "status": {"$in": ACTIVE}}, {"$set": {"status": "error"}})
-        await save_steps(status="error", error=str(exc) or exc.__class__.__name__, finished_at=iso(),
+        stopped = await db.run_results.count_documents({"run_id": run_id, "status": "error"})
+        await save_steps(status="error", error=str(exc) or exc.__class__.__name__, finished_at=iso(), errors=stopped,
                          duration_ms=int((time.monotonic() - t0) * 1000))
 
 
@@ -184,9 +233,9 @@ async def finalize_run(run_id: str) -> dict:
     """Recount results and set the run's final status."""
     statuses = [r["status"] for r in await db.run_results.find(
         {"run_id": run_id}, {"_id": 0, "status": 1}).to_list(None)]
-    passed, failed = statuses.count("passed"), statuses.count("failed")
-    status = "failed" if failed or "error" in statuses else "passed"
-    update = {"status": status, "passed": passed, "failed": failed, "total": len(statuses)}
+    passed, failed, errors = statuses.count("passed"), statuses.count("failed"), statuses.count("error")
+    status = "failed" if failed or errors else "passed"
+    update = {"status": status, "passed": passed, "failed": failed, "errors": errors, "total": len(statuses)}
     await db.runs.update_one({"id": run_id}, {"$set": update})
     return update
 

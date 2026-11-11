@@ -12,7 +12,10 @@ be a developer. Follow the steps in order and copy each command exactly as shown
 | Visual Studio Code (VS Code) | The window you run the app from | Free |
 | Python | Runs the app's server | Free |
 | Node.js | Builds the app's screens | Free |
-| MongoDB | The database where the app keeps its data | Free |
+| MongoDB | The database where the app keeps its own data (suites, baselines, run history) | Free |
+
+You do **not** need to install anything for Oracle. The app can talk to Oracle databases by itself;
+see Part 6.
 
 You install these once. You may need administrator rights on your computer; if an installer asks
 for a password you do not have, ask your IT team.
@@ -196,6 +199,27 @@ something to look at. The [user guide](user-guide.md) explains every screen.
 
 **Keep the terminal open** while you use the app. The app stops when you close it.
 
+## Part 6: Connect the app to your Oracle database
+
+The app checks results by running queries on an Oracle database where your build has already run.
+
+1. **Turn on the company VPN** on this computer, the same way you do for other work tools. The app
+   reaches Oracle through your computer's network, so the VPN must be connected whenever you test a
+   connection or start a run.
+2. In the app, click **Connections** in the left menu, then **Add connection**.
+3. Enter the database details: a name of your choice, the host, the port (usually `1521`), the
+   service name (or SID), and the Oracle user and password. If you already use SQL Developer or
+   Toad, the same values are in your connection there. Otherwise ask your DBA.
+4. Click **Test connection**.
+   - A green message means it works. Click **Add connection** to save it.
+   - A red message tells you what to fix. See the table at the end of this guide.
+
+You only do this once per database. After that, pick the connection in **New run**. The
+[user guide](user-guide.md) covers the rest.
+
+**About the password:** it is saved in the app's database on this computer so that you do not have
+to retype it. It is never displayed again. Use an Oracle account that can only read data.
+
 ## Stop the app
 
 Click inside the terminal and press **Ctrl + C** (also on Mac), or just close VS Code. Your data
@@ -219,9 +243,9 @@ Keep this key private. Do not email it or share the `.env` file.
 ## Getting a newer version of the app
 
 1. Download the ZIP again (Part 2) and replace your `regression` folder with the new one.
-2. Repeat Part 4 (one-time setup).
+2. Repeat Part 4 (one-time setup). This also installs anything new the app needs.
 
-Your data is not lost: it lives in MongoDB, not in the folder. If you turned on AI analysis, copy
+Your data and your saved Oracle connections are not lost: they live in MongoDB, not in the folder. If you turned on AI analysis, copy
 your `.env` file into the new `backend` folder.
 
 ## If something goes wrong
@@ -235,4 +259,10 @@ your `.env` file into the new `backend` folder.
 | `address already in use` or `only one usage of each socket address` | The app is already running in another terminal. Use that one, or close it first. |
 | The browser shows `{"detail":"Not Found"}` | The screens were not built. Run the two commands in Part 4, Step 2 again from the `frontend` folder, then start the app. |
 | The browser says the site cannot be reached | The app is not running. Check that the terminal shows **Application startup complete** and that the address is exactly `http://localhost:8000`. |
+| Test connection says **Could not reach host:port. Check that the VPN is connected** | The VPN is off, or the host or port is wrong. Connect the VPN and test again. If it still fails, compare the host and port with a connection that works in SQL Developer. |
+| Test connection says **Oracle rejected the user name or password** | Retype the password. Check that the account is not locked or expired by logging in with another tool. |
+| Test connection says the database **does not know service name** (or **SID**) | The service name or SID is wrong, or you picked the wrong one of the two in **Identify by**. |
+| Test connection mentions **Native Network Encryption** | Your database requires a kind of encryption the app's built-in Oracle driver does not support. Ask your DBA whether a TLS (TCPS) connection is available, and tell whoever maintains the app. |
+| A run worked earlier but now stops with a VPN message | The VPN disconnected. Reconnect it and click **Run again** on the run. |
+| `No module named 'oracledb'` when starting the app | The app was updated but the setup was not repeated. Run the `pip install` command from Part 4, Step 1 again. |
 | `No such file or directory` or `cannot find the path` after a `cd` command | The terminal is in the wrong folder. Close it with the bin icon, open a new one (**Terminal → New Terminal**) and start that part again. |

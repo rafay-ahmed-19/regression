@@ -6,7 +6,7 @@ import { BarChart } from "@mui/x-charts/BarChart";
 import { useFetch } from "../api.js";
 import { Empty, ErrorState, FlakyChip, Loading, Mono, PageHeader, Panel, PassRate, StatusChip } from "../components/Common.jsx";
 import LaunchRunDialog from "../dialogs/LaunchRunDialog.jsx";
-import { fmtDate, fmtDuration } from "../format.js";
+import { fmtDate, fmtDuration, runSource } from "../format.js";
 import { STATUS } from "../theme.js";
 
 function Kpi({ label, value, hint, tone }) {
@@ -87,7 +87,7 @@ export default function Dashboard() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Status</TableCell><TableCell>Suite</TableCell><TableCell>Branch</TableCell><TableCell>Commit</TableCell>
+                  <TableCell>Status</TableCell><TableCell>Suite</TableCell><TableCell>Branch / build</TableCell><TableCell>Source</TableCell>
                   <TableCell align="right">Passed</TableCell><TableCell align="right">Failed</TableCell><TableCell>Duration</TableCell><TableCell>Started</TableCell>
                 </TableRow>
               </TableHead>
@@ -97,7 +97,7 @@ export default function Dashboard() {
                     <TableCell><StatusChip status={r.status} /></TableCell>
                     <TableCell><Link component={RouterLink} to={`/runs/${r.id}`} underline="hover" color="inherit" sx={{ fontWeight: 550 }}>{r.suite_name}</Link></TableCell>
                     <TableCell><Mono>{r.branch}</Mono></TableCell>
-                    <TableCell><Mono sx={{ color: "text.secondary" }}>{r.commit}</Mono></TableCell>
+                    <TableCell sx={{ color: r.mode === "oracle" ? "text.primary" : "text.secondary" }}>{runSource(r)}</TableCell>
                     <TableCell align="right" sx={{ color: STATUS.passed.fg, fontWeight: 600 }}>{r.passed}</TableCell>
                     <TableCell align="right" sx={{ color: r.failed ? STATUS.failed.fg : "text.secondary", fontWeight: 600 }}>{r.failed}</TableCell>
                     <TableCell>{fmtDuration(r.duration_ms)}</TableCell>

@@ -15,7 +15,7 @@ import { DataTable, DiffGrid } from "../components/grids.jsx";
 import { useNotify } from "../components/Notify.jsx";
 import AcceptDialog from "../dialogs/AcceptDialog.jsx";
 import AiPanel from "../dialogs/AiPanel.jsx";
-import { STEP_TYPES, fmtDateTime, fmtDuration, plural } from "../format.js";
+import { STEP_TYPES, fmtDateTime, fmtDuration, plural, runSource } from "../format.js";
 import { MONO, STATUS } from "../theme.js";
 
 const ACTIVE = ["queued", "running"];
@@ -55,7 +55,7 @@ function Steps({ run }) {
               <Typography sx={{ fontWeight: 600, mt: 0.25 }} noWrap title={s.name}>{s.name}</Typography>
               <Typography variant="caption" color="text.secondary">
                 {s.type === "validate" && s.status === "running" ? `${finished} of ${pts.length} compared`
-                  : s.status === "done" ? fmtDuration(s.duration_ms) : s.status === "running" ? "running…" : s.status}
+                  : s.status === "done" ? fmtDuration(s.duration_ms) : s.status === "running" ? "running…" : s.status === "skipped" && run.mode === "oracle" && s.type !== "validate" ? "skipped: already run" : s.status}
               </Typography>
             </Box>
           );
@@ -150,7 +150,18 @@ function ResultPanel({ run, summary, onChanged }) {
   if (ACTIVE.includes(summary.status)) {
     return <Paper variant="outlined"><Empty title={summary.status === "running" ? "Comparing…" : "Queued"} /></Paper>;
   }
-  if (summary.status === "error") return <Alert severity="error">This test point was not compared because the run stopped with an error.</Alert>;
+  if (summary.status === "error") {
+    return (
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack direction="row" sx={{ alignItems: "center", gap: 1, mb: 1.5 }}>
+          <Mono sx={{ fontSize: 16, fontWeight: 700 }}>{summary.sheet_name}</Mono>
+          <StatusChip status="error" />
+        </Stack>
+        <Alert severity="error">{summary.error || "This test point was not compared because the run stopped."}</Alert>
+        {summary.error && <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>The query could not be run, so there is nothing to compare. Fix the SQL in the Catalogue or the database, then run again.</Typography>}
+      </Paper>
+    );
+  }
   if (loading && !res) return <Loading />;
   if (error && !res) return <ErrorState error={error} onRetry={reload} />;
   if (!res || res.test_point_id !== tid) return <Loading />;
@@ -253,7 +264,7 @@ export default function RunDetail() {
       notify(e.message, "error");
     }
   };
-  const done = run.passed + run.failed;
+  const done = run.passed + run.failed + (run.errors || 0);
 
   return (
     <>
@@ -262,8 +273,8 @@ export default function RunDetail() {
         <Typography color="text.primary" sx={{ fontSize: 12 }}>{run.suite_name} · {run.branch}</Typography>
       </Breadcrumbs>
       <PageHeader
-        title={<Stack component="span" direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>{run.suite_name}<StatusChip status={run.status} />{run.impacted_only && <Chip label="Impacted only" variant="outlined" />}</Stack>}
-        subtitle={<><Mono>{run.branch}</Mono> @ <Mono>{run.commit}</Mono> · started {fmtDateTime(run.started_at)}{run.triggered_by ? ` by ${run.triggered_by}` : ""} · {active ? `${done} of ${run.total} compared` : `${fmtDuration(run.duration_ms)} · ${run.passed} passed, ${run.failed} failed`}</>}
+        title={<Stack component="span" direction="row" sx={{ alignItems: "center", gap: 1.25, flexWrap: "wrap" }}>{run.suite_name}<StatusChip status={run.status} />{run.impacted_only && <Chip label="Impacted only" variant="outlined" />}<Chip label={runSource(run)} variant="outlined" color={run.mode === "oracle" ? "primary" : "default"} /></Stack>}
+        subtitle={<><Mono>{run.branch}</Mono>{run.commit && <> @ <Mono>{run.commit}</Mono></>} · started {fmtDateTime(run.started_at)}{run.triggered_by ? ` by ${run.triggered_by}` : ""} · {active ? `${done} of ${run.total} compared` : `${fmtDuration(run.duration_ms)} · ${run.passed} passed, ${run.failed} failed${run.errors ? `, ${plural(run.errors, "error")}` : ""}`}</>}
         actions={
           <>
             {failures.length > 0 && !active && <Button variant="outlined" onClick={() => setAcceptAll(true)}>Accept all {failures.length} failures</Button>}

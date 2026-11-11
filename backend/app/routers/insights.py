@@ -58,9 +58,12 @@ async def compare_builds(run_a: str, run_b: str):
         raise HTTPException(404, "Run not found")
     if a["suite_id"] != b["suite_id"]:
         raise HTTPException(400, "Both runs must belong to the same suite")
-    finished = {"status": {"$in": ["passed", "failed"]}}
-    ra = {r["test_point_id"]: r for r in await db.run_results.find({"run_id": run_a, **finished}, NO_ID).to_list(None)}
-    rb = {r["test_point_id"]: r for r in await db.run_results.find({"run_id": run_b, **finished}, NO_ID).to_list(None)}
+    all_a = await db.run_results.find({"run_id": run_a}, NO_ID).to_list(None)
+    all_b = await db.run_results.find({"run_id": run_b}, NO_ID).to_list(None)
+    ra = {r["test_point_id"]: r for r in all_a if r["status"] in ("passed", "failed")}
+    rb = {r["test_point_id"]: r for r in all_b if r["status"] in ("passed", "failed")}
+    # Test points whose query failed on either side cannot be compared.
+    errors = sorted({r["sheet_name"] for r in all_a + all_b if r["status"] == "error"})
     items = []
     for tid in sorted(ra.keys() & rb.keys(), key=lambda t: ra[t]["sheet_name"]):
         x, y = ra[tid], rb[tid]
@@ -72,6 +75,7 @@ async def compare_builds(run_a: str, run_b: str):
                       "diffs": out["diffs"][:MAX_COMPARE_DIFFS]})
     different = sum(1 for i in items if i["status"] == "different")
     return {"run_a": a, "run_b": b, "items": items,
-            "only_a": sorted(ra[t]["sheet_name"] for t in ra.keys() - rb.keys()),
-            "only_b": sorted(rb[t]["sheet_name"] for t in rb.keys() - ra.keys()),
+            "only_a": sorted(ra[t]["sheet_name"] for t in ra.keys() - rb.keys() if ra[t]["sheet_name"] not in errors),
+            "only_b": sorted(rb[t]["sheet_name"] for t in rb.keys() - ra.keys() if rb[t]["sheet_name"] not in errors),
+            "errors": errors,
             "summary": {"compared": len(items), "different": different, "identical": len(items) - different}}

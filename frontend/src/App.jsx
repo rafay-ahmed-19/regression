@@ -8,6 +8,7 @@ import Runs from "./pages/Runs.jsx";
 import RunDetail from "./pages/RunDetail.jsx";
 import Compare from "./pages/Compare.jsx";
 import Baselines from "./pages/Baselines.jsx";
+import Connections from "./pages/Connections.jsx";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="runs/:runId" element={<RunDetail />} />
         <Route path="compare" element={<Compare />} />
         <Route path="baselines" element={<Baselines />} />
+        <Route path="connections" element={<Connections />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

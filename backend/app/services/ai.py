@@ -61,13 +61,14 @@ def build_prompt(run: dict, result: dict, history: list[dict]) -> str:
     return (
         f"Test point: {result['sheet_name']} ({result['name']}), module {result.get('module') or '-'}\n"
         f"Suite: {run['suite_name']}\n"
-        f"Branch: {run['branch']} at commit {run['commit']}\n\n"
+        f"Build: {run['branch']}" + (f" at commit {run['commit']}" if run.get("commit") else "") + "\n\n"
         f"Oracle SQL:\n{result.get('sql') or '(not recorded)'}\n\n"
         f"Key columns: {', '.join(result['key_columns']) or '(none, matched by position)'}\n"
         f"Numeric tolerance: ±{result['tolerance']}\n"
         f"Baseline v{result['baseline_version']}: {result['expected_count']} rows. "
         f"Actual: {result['actual_count']} rows. Matched: {result['matched']}.\n\n"
-        f"Files changed on this branch versus main:\n{changed}\n\n"
+        + (f"Files changed on this branch versus main:\n{changed}\n\n" if run.get("mode") != "oracle"
+           else "Changed files are not known for this run.\n\n") +
         f"Recent results for this test point, newest first: {recent}\n\n"
         f"Differences ({result['diff_count']} in total, first {len(lines)} shown):\n" + "\n".join(lines)
     )

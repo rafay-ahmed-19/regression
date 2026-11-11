@@ -24,10 +24,13 @@ def ordered(results: list[dict]) -> list[dict]:
 
 def _facts(run: dict) -> list[tuple[str, object]]:
     return [
-        ("Suite", run["suite_name"]), ("Branch / release", run["branch"]), ("Commit", run["commit"]),
+        ("Suite", run["suite_name"]), ("Branch / build", run["branch"]),
+        ("Source", f"Oracle: {run['connection_name']}" if run.get("mode") == "oracle" else "Simulated"),
+        ("Commit", run["commit"] or "-"),
         ("Run ID", run["id"]), ("Started", (run["started_at"] or "")[:19].replace("T", " ") + " UTC"),
         ("Duration", f"{(run.get('duration_ms') or 0) / 1000:.1f} s"), ("Status", run["status"].upper()),
         ("Test points", run["total"]), ("Passed", run["passed"]), ("Failed", run["failed"]),
+        ("Errors", run.get("errors", 0)),
         ("Scope", "Impacted test points only" if run.get("impacted_only") else "All test points"),
     ]
 
@@ -43,12 +46,12 @@ def build_excel(run: dict, results: list[dict]) -> bytes:
         ws.cell(row=ws.max_row, column=1).font = Font(bold=True)
     ws.append([])
     ws.append(["Sheet", "Test point", "Status", "Differences", "Matched rows", "Baseline rows", "Actual rows",
-               "Baseline version"])
+               "Baseline version", "Error"])
     for c in ws[ws.max_row]:
         c.fill, c.font = HEAD, Font(bold=True)
     for r in ordered(results):
         ws.append([r["sheet_name"], r["name"], r["status"], r.get("diff_count", 0), r["matched"],
-                   r["expected_count"], r["actual_count"], f"v{r['baseline_version']}"])
+                   r["expected_count"], r["actual_count"], f"v{r['baseline_version']}", r.get("error") or ""])
         ws.cell(row=ws.max_row, column=3).font = Font(
             bold=True, color="BE123C" if r["status"] != "passed" else "15803D")
     ws.append([])
