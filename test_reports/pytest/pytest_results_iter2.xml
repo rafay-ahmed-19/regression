@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="1" tests="13" time="23.180" timestamp="2026-11-05T06:17:05.376378+00:00" hostname="agent-env-a8f84907-8ffd-4c93-8279-4e7786b0e3f0"><testcase classname="tests.test_iteration2_import_fixes.TestImportZip" name="test_import_zip_structure" time="0.275"><failure message="AssertionError: assert [{'name': 'Va...t_points': 2}] == [{'name': 'o_...t_points': 2}]&#10;  &#10;  At index 0 diff: {'name': 'Validate o_validationDay1_RCF', 'test_points': 2} != {'name': 'o_validationDay1_RCF', 'test_points': 2}&#10;  Use -v to get more diff">self = &lt;test_iteration2_import_fixes.TestImportZip object at 0xf84a1b3af4d0&gt;
+s = &lt;requests.sessions.Session object at 0xf84a1b705f50&gt;
+created_suites = ['2b73811b-607c-45a2-b1a2-d85ec45e173a']
+
+    def test_import_zip_structure(self, s, created_suites):
+        r = import_zip(s)
+        assert r.status_code == 200, r.text
+        d = r.json()
+        created_suites.append(d["suite_id"])
+        print("IMPORT RESULT", d)
+        assert d["steps"] == 5 and d["test_points"] == 2
+        assert d["step_types"] == {"setup_sql": 1, "load_data": 2, "run_job": 1, "validate": 1}
+&gt;       assert d["checkpoints"] == [{"name": "o_validationDay1_RCF", "test_points": 2}]
+E       AssertionError: assert [{'name': 'Va...t_points': 2}] == [{'name': 'o_...t_points': 2}]
+E         
+E         At index 0 diff: {'name': 'Validate o_validationDay1_RCF', 'test_points': 2} != {'name': 'o_validationDay1_RCF', 'test_points': 2}
+E         Use -v to get more diff
+
+tests/test_iteration2_import_fixes.py:55: AssertionError</failure></testcase><testcase classname="tests.test_iteration2_import_fixes.TestImportZip" name="test_import_no_steps_400" time="0.065" /><testcase classname="tests.test_iteration2_import_fixes.TestImportZip" name="test_import_bad_zip" time="0.067"><failure message="assert 500 == 400&#10; +  where 500 = &lt;Response [500]&gt;.status_code">self = &lt;test_iteration2_import_fixes.TestImportZip object at 0xf84a1b431910&gt;
+s = &lt;requests.sessions.Session object at 0xf84a1b705f50&gt;
+
+    def test_import_bad_zip(self, s):
+        r = s.post(f"{API}/import/folder", data={"name": "TEST_bad", "build_folder": "b"},
+                   files=[("files", ("x.zip", b"notzip", "application/zip"))])
+        print("BAD ZIP", r.status_code, r.text[:200])
+&gt;       assert r.status_code == 400
+E       assert 500 == 400
+E        +  where 500 = &lt;Response [500]&gt;.status_code
+
+tests/test_iteration2_import_fixes.py:90: AssertionError</failure></testcase><testcase classname="tests.test_iteration2_import_fixes.TestImportZip" name="test_import_empty_build_folder" time="0.063"><failure message="assert 422 == 200&#10; +  where 422 = &lt;Response [422]&gt;.status_code">self = &lt;test_iteration2_import_fixes.TestImportZip object at 0xf84a1b431fd0&gt;
+s = &lt;requests.sessions.Session object at 0xf84a1b705f50&gt;
+created_suites = ['2b73811b-607c-45a2-b1a2-d85ec45e173a']
+
+    def test_import_empty_build_folder(self, s, created_suites):
+        r = import_zip(s, name="TEST_import_nofolder", folder="")
+        print("EMPTY BUILD FOLDER", r.status_code, r.text[:200])
+        if r.status_code == 200:
+            created_suites.append(r.json()["suite_id"])
+&gt;       assert r.status_code == 200
+E       assert 422 == 200
+E        +  where 422 = &lt;Response [422]&gt;.status_code
+
+tests/test_iteration2_import_fixes.py:97: AssertionError</failure></testcase><testcase classname="tests.test_iteration2_import_fixes.TestImportMultiFile" name="test_import_files" time="0.072" /><testcase classname="tests.test_iteration2_import_fixes.TestImportedRun" name="test_run_and_accept_positional" time="3.475"><skipped type="pytest.skip" message="rGLPosting passed on fx-rounding - no positional diff to accept">/app/backend/tests/test_iteration2_import_fixes.py:133: rGLPosting passed on fx-rounding - no positional diff to accept</skipped></testcase><testcase classname="tests.test_iteration2_import_fixes.TestImportedRun" name="test_impacted_only_zero_400" time="0.062" /><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_zero_tp_run_400_seed" time="0.131" /><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_cascade_delete" time="3.897" /><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_rollback_only_latest" time="3.830" /><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_flaky_uses_original_status" time="7.086"><failure message="assert True is False">self = &lt;test_iteration2_import_fixes.TestFixes object at 0xf84a1ad7d450&gt;
+s = &lt;requests.sessions.Session object at 0xf84a1b705f50&gt;
+created_suites = ['2b73811b-607c-45a2-b1a2-d85ec45e173a', 'c077b170-1124-4815-8b52-098eb0178560', 'f01c3c77-4dcd-4fa8-bf4e-49b8f7e82499', '9edc92f8-ed3a-48e4-acc3-1b503e16b429', 'bca9ad65-2a8d-4fca-9c1d-c5d3ced9860a']
+
+    def test_flaky_uses_original_status(self, s, created_suites):
+        d = import_zip(s, name="TEST_flaky").json()
+        created_suites.append(d["suite_id"])
+        r1 = wait_run(s, s.post(f"{API}/runs", json={"suite_id": d["suite_id"], "branch": "feature/fx-rounding"}).json()["id"])
+        if not r1["failed"]:
+            pytest.skip("no failures")
+        s.post(f"{API}/runs/{r1['id']}/accept", json={"scope": "run"})
+        wait_run(s, s.post(f"{API}/runs", json={"suite_id": d["suite_id"], "branch": "feature/fx-rounding"}).json()["id"])
+        tps = s.get(f"{API}/test-points", params={"suite_id": d["suite_id"]}).json()
+        for t in tps:
+            print("FLAKY", t["sheet_name"], t["stats"])
+&gt;           assert t["stats"]["flaky"] is False
+E           assert True is False
+
+tests/test_iteration2_import_fixes.py:194: AssertionError</failure></testcase><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_explain_friendly" time="3.521" /><testcase classname="tests.test_iteration2_import_fixes.TestFixes" name="test_exports" time="0.513" /></testsuite></testsuites>

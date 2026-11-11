@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 2: backend pytest (13 old + 13 new tests; 23/26 pass) and Playwright E2E of the MUI v9 rebuild and the new 'Import test folder' feature. Every page (Dashboard, Runs, Run detail, Compare, Catalogue, Suites, Baselines) renders with MUI, no tailwind classes and no console errors. Importing the fixture works both from the zip (import-zip-input) and from a folder pick (import-folder-input): 5 steps (1 setup_sql, 2 load_data, 1 run_job, 1 validate) and 2 test points. rLoanBalance is keyed by LOAN_ID; rGLPosting uses 'row position' keys. Running an import on feature/fx-rounding works: the step 5 chip shows x/2 and turns red when there are failures, results are grouped under o_validationDay1_RCF, and accepting a row with positional keys works (UI and API). Regression checks pass: launch dialog MUI selects, the impacted-only 0-tests alert with Start disabled, POST /runs with 0 tests returns 400, accept cell/row/test point/run, rollback only on the latest change (400 for older or repeated rollbacks), cascade delete, diff column filter (3 to 2 rows), friendly AI budget error, catalogue search/edit/new/CSV, suite create/edit/zip upload, and PDF/XLSX exports. I fixed 1 bug: key columns were not highlighted in Compare. Open issues: 1 flaky false positive that is still there, 1 import 500 on a bad zip, a wrong prefill when importing from a zip, and some minor items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/compare", "issue": "Items did not include key_columns, so the Compare DiffGrid never highlighted key columns (the 'key columns highlighted in Compare' fix was frontend-only). FIXED by testing agent: added key_columns to each item in server.py compare_runs."},
+      {"endpoint": "tp_stats / flaky", "issue": "Still a false flaky. Steps: run fails on feature/fx-rounding, then Accept run, then re-run on the same branch, which passes. original_status sequence is failed→passed, so flips=1 and the test point is marked flaky=True. Accepting a baseline legitimately changes the outcome. Fix: reset the flip sequence at the baseline version (store the baseline version on run_results and only compare runs with the same baseline version), or require flips>=2. The threshold flips>=1 is also very sensitive: one real regression followed by a fix counts as flaky."},
+      {"endpoint": "POST /api/import/folder", "issue": "Uploading a single invalid .zip returns 500 (zipfile.BadZipFile is not caught in expand_zip). It should return 400 'File is not a valid zip archive'."},
+      {"endpoint": "POST /api/import/folder", "issue": "build_folder is Form(...), so sending an empty string returns 422, even though the code has `build_folder or root` as a fallback. If the user clears the 'Build folder' field the import fails. Use Form('') to allow it."},
+      {"endpoint": "finalize_run / step_logs", "issue": "After accepting failures (row/test point/run), the run becomes Passed but step_logs[validate].failed/checked is not recalculated. The step 5 chip stays red '0/2' on a passed run."},
+      {"endpoint": "importer.describe_zip", "issue": "For '1.la_reference_data.alfresco.zip' the mode is cut at the first '.', so the step name is 'Load la_reference_data' and the '.alfresco' source is lost (only DATE_TOKEN names get a source)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ImportFolderDialog (zip pick)", "issue": "When a zip is chosen, the suite name and build folder are filled from the zip FILE name ('folder', 'test/informatica/data/folder'), not from the root folder inside it ('Acc_Subledger_MS'). The backend then keeps the wrong build_folder because it is non-empty. Fix: let the backend override with the detected root when the zip is picked, or read the zip root on the client (e.g. JSZip) / return the detected root.", "selector": "[data-testid='import-name-input'], [data-testid='import-folder-path-input']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Baselines history", "issues": ["There is no suite column. Imported test points from different suites with the same sheet name (rGLPosting) can't be told apart."]},
+      {"screen": "Catalogue", "issues": ["After a failure is accepted, 'Last' shows Passed while 'Pass rate' shows 0% (1). Last uses the current status and pass rate uses original_status, which is confusing."]},
+      {"screen": "Dashboard 'Lowest pass rate'", "issues": ["Lists test points at 100% (r_positions) when there are fewer than 5 failing ones. Consider hiding entries with a 100% pass rate."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_regression_hub.py", "/app/backend/tests/test_iteration2_import_fixes.py", "/app/backend/tests/make_failing_import_run.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix the false flaky after baseline acceptance (tie flips to the baseline version, or raise the threshold)",
+    "Catch BadZipFile in /api/import/folder and return 400",
+    "Allow an empty build_folder in /api/import/folder (Form('')) so the root fallback works",
+    "When a zip is picked in the import dialog, fill the name and build folder from the folder inside the zip, not the zip file name",
+    "Recalculate the validate step_logs failed counts after accepting baselines (finalize_run)",
+    "Optional: add a suite column to Baselines history; keep the '.alfresco' source in load step names"
+  ],
+  "critical_code_review_comments": [
+    "server.py is about 700 lines; split routes (runs/baselines/import/catalogue) into modules",
+    "Positional keys (row index) shift after a dropped or inserted row, which turns every following row into a diff. Acceptable for an MVP, but say so in the UI or allow choosing key columns after import",
+    "Simulated results for imported test points are seeded by the random tp id, so whether a branch fails changes on every import (non-deterministic demos)",
+    "import_folder inserts test points and baselines one by one; use insert_many",
+    "Imported test points have impacted_by=[], so impacted-only runs on an imported suite always return 400 'No test points'. Users can't set impacted_by during import",
+    "N+1 queries in list_suites and list_test_points are still there"
+  ],
+  "updated_files": ["/app/backend/server.py (compare items now include key_columns)", "/app/backend/tests/test_iteration2_import_fixes.py", "/app/backend/tests/make_failing_import_run.py"],
+  "success_rate": {"backend": "88% (23/26; 3 failing: bad zip 500, empty build_folder 422, false flaky)", "frontend": "95% (zip-pick prefill wrong; everything else passes)"},
+  "seed_data_creation": "Created TEST_UI_* and pytest TEST_* suites through imports. All deleted by id; delete cascades to runs, results, baselines and history. Seed data untouched apart from read-only compare/export calls. The explain call was made on an existing seeded failed run (no data change).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: export REACT_APP_BACKEND_URL=...; pytest /app/backend/tests/test_regression_hub.py /app/backend/tests/test_iteration2_import_fixes.py -n 0. The fixture zip is /tmp/fx/folder.zip (folder /tmp/fx/Acc_Subledger_MS). Simulated failures are random per import, so make_failing_import_run.py imports repeatedly until rGLPosting fails on fx-rounding and prints the suite and run ids (delete that suite afterwards). The LLM budget is exhausted: explain shows the friendly 'AI budget is used up' message. Playwright set_input_files with a directory path works for import-folder-input.",
+  "rca of the issue": "False flaky: tp_stats builds the sequence of original_status per branch over all runs, ignoring baseline versions. A fail→accept→pass sequence counts as a flip. Compare key highlight: the DiffGrid keyColumns prop was wired to i.key_columns, but the backend never sent it (now fixed). Import 500: expand_zip calls zipfile.ZipFile without try/except."
+}

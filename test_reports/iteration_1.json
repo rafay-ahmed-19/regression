@@ -1,0 +1,46 @@
+{
+  "summary": "Full backend (13 pytest tests, all passing) + frontend E2E (Playwright) of Evolv Regression Hub. Everything requested works: Dashboard KPIs/chart/recent runs, launching a run with impacted-only (feature/fx-rounding on Trade Valuation EOD selects only r_fx_rates and r_pnl_summary, 2 test points), live progress, finishing in about 5s, run detail tabs, accept at cell, row, test point and run level, baselines history with detail dialog and rollback, Compare A/B with KPIs, expand and swap, Catalogue search/filters/edit/new/CSV export, Suites create/edit/zip upload/run, PDF/XLSX exports, and the AI explain error shown cleanly in the sheet. Found 1 backend 500 (search regex), which I fixed. Also found 1 functional UI bug (the diff column filter chip does not filter) and a few minor issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/test-points?q=(", "issue": "Returned 500 because the user's search text went into Mongo $regex without escaping. FIXED by testing agent with re.escape(q)."},
+      {"endpoint": "DELETE /api/suites/{id}", "issue": "Does not cascade: the suite's test_points, baselines and runs are left orphaned. Orphaned test points still show on the dashboard 'Needs attention' list and in the Catalogue with an empty suite name. There is also no DELETE /api/test-points/{id} endpoint."},
+      {"endpoint": "POST /api/runs/{id}/results/{tid}/explain", "issue": "The raw litellm error string is sent to the client and shown in the UI, including the key id ('Key=d5ln... sk-...nE5g', cost and budget). Map it to a friendly message such as 'AI budget exceeded - try later'."},
+      {"endpoint": "POST /api/baseline-history/{hid}/rollback", "issue": "Rolling back an older entry restores that entry's before_rows, which silently throws away any newer accepted versions (e.g. rolling back the v2 cell accept after v4 drops the v3/v4 changes). Rolling back the same entry twice is also allowed. Consider allowing rollback only of the latest entry, or warn the user."},
+      {"endpoint": "tp_stats / flaky", "issue": "Accepting a baseline rewrites historical run_results status to passed. The flip detector then reads accept-then-fail sequences as flaky, so test points get falsely marked Flaky."},
+      {"endpoint": "POST /api/suites/{id}/inputs, POST /api/test-points", "issue": "They don't check that the suite exists (the upload to a missing suite quietly matches nothing; a test point can be created with an unknown suite_id). GET /baseline-history/{hid} and rollback will crash with a 500 if the test point has been deleted."},
+      {"endpoint": "POST /api/runs", "issue": "A run with 0 test points (empty suite, or impacted-only with no matches) is immediately marked 'passed', which is misleading. Consider status 'skipped' or blocking it in the UI (the Start button currently allows 'Start run · 0 test points')."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DiffGrid column filter chips", "issue": "Clicking diff-col-filter-FEES (count shown as x1) still showed all 5 diff rows. The filter uses d.cells.includes(col), but missing/extra diffs have cells = all columns, so they always match. Filter only 'modified' diffs (d.type==='modified' && d.cells.includes(col)).", "selector": "[data-testid^='diff-col-filter-']", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Run detail / Compare diff summary", "issues": ["When there are only missing/extra rows, a stray '|' separator is drawn with no column chips after it", "Compare DiffGrid doesn't pass keyColumns, so key columns aren't highlighted there"]},
+      {"screen": "Catalogue test point sheet", "issues": ["Synthetic baseline data for new test points doesn't match column names (NAME holds numbers, AMOUNT holds letters A/B/C). This is a simulation detail but looks odd in a demo"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_regression_hub.py", "/app/backend/tests/cleanup_test_data.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix the DiffGrid column filter so it only matches modified rows with that column changed",
+    "Sanitize the AI explain error message (don't show the key id or cost to the user)",
+    "Cascade suite delete (test points/baselines/results) or block it; add test point delete",
+    "Decide rollback semantics for non-latest entries (warn, or restrict to latest) and block double rollback",
+    "Avoid false 'flaky' flags caused by baseline acceptance rewriting historical results"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 634 lines; consider splitting routes/engine/run executor into modules",
+    "list_suites and list_test_points run N+1 queries (count_documents/find_one per item); use aggregation",
+    "explain uses model 'claude-sonnet-5-5'. Could not verify it works because the budget is exhausted",
+    "AiExplainSheet does JSON.parse on the SSE body without checking res.ok; a 404 JSON response would throw an unclear parse error",
+    "create_run stores the internal '_backdated' flag in the run document, and it is returned in API responses"
+  ],
+  "updated_files": ["/app/backend/server.py (re.escape for test-point search regex)", "/app/backend/tests/test_regression_hub.py", "/app/backend/tests/cleanup_test_data.py"],
+  "success_rate": {"backend": "100% (13/13 after regex fix)", "frontend": "95% (1 filter bug)"},
+  "seed_data_creation": "Created TEST_suite/TEST_UI_Suite plus 11 TEST test points and 4 runs; all deleted by id afterwards. Mutated seed data (expected per brief): one impacted-only Trade Valuation EOD run on feature/fx-rounding (fc51d8bb) was created; on seed run 2d2b0bed (hotfix/null-ccy) the r_pnl_summary baseline was accepted (cell/row/test point) and then the whole run; r_fx_rates v2 was rolled back (v3).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest /app/backend/tests/test_regression_hub.py -n 0 with REACT_APP_BACKEND_URL exported. The test creates its own TEST_suite and deletes it, but test points/runs are orphaned (no cascade), so run tests/cleanup_test_data.py afterwards. The LLM budget is exhausted, so the explain stream returns an error event and then [DONE]."
+}
