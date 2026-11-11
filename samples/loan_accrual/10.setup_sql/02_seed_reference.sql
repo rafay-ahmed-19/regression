@@ -1,0 +1,2 @@
+INSERT INTO ref_day_count VALUES ('ACT/360', 360);
+COMMIT;

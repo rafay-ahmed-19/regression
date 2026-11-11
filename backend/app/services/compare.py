@@ -1,0 +1,108 @@
+"""Comparison engine: key-based row matching with numeric tolerance (FR-16 to FR-18)."""
+from typing import Any
+
+EPS = 1e-9
+
+
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _fmt_key(v: Any) -> str:
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return "" if v is None else str(v)
+
+
+def pad(row: list, width: int) -> list:
+    row = list(row)
+    return (row + [""] * width)[:width]
+
+
+def row_keys(rows: list[list], columns: list[str], key_columns: list[str]) -> list[str]:
+    """One key per row. Without key columns the key is the 1-based row position.
+
+    Repeated key values get a ` #n` suffix so every row stays addressable.
+    """
+    idx = [columns.index(k) for k in key_columns if k in columns]
+    if not idx:
+        return [str(i + 1) for i in range(len(rows))]
+    seen: dict[str, int] = {}
+    keys = []
+    for row in rows:
+        row = pad(row, len(columns))
+        key = " | ".join(_fmt_key(row[i]) for i in idx)
+        n = seen.get(key, 0) + 1
+        seen[key] = n
+        keys.append(key if n == 1 else f"{key} #{n}")
+    return keys
+
+
+def values_equal(a: Any, b: Any, tolerance: float = 0.0) -> bool:
+    if _is_number(a) and _is_number(b):
+        return abs(a - b) <= tolerance + EPS
+    if a in (None, "") and b in (None, ""):
+        return True
+    return a == b
+
+
+def compare(columns: list[str], key_columns: list[str], expected: list[list], actual: list[list],
+            tolerance: float = 0.0) -> dict:
+    """Diff `actual` against `expected`.
+
+    Each difference is `modified` (with the changed cells), `missing` (in expected
+    only) or `extra` (in actual only). Row order never matters when keys are set.
+    """
+    width = len(columns)
+    exp_keys = row_keys(expected, columns, key_columns)
+    act_keys = row_keys(actual, columns, key_columns)
+    act_index = {k: i for i, k in enumerate(act_keys)}
+    exp_seen = set(exp_keys)
+    diffs, matched = [], 0
+
+    for i, key in enumerate(exp_keys):
+        e = pad(expected[i], width)
+        j = act_index.get(key)
+        if j is None:
+            diffs.append({"key": key, "type": "missing", "expected": e, "actual": None, "cells": list(columns),
+                          "expected_row": i + 1, "actual_row": None})
+            continue
+        a = pad(actual[j], width)
+        cells = [c for n, c in enumerate(columns) if not values_equal(e[n], a[n], tolerance)]
+        if cells:
+            diffs.append({"key": key, "type": "modified", "expected": e, "actual": a, "cells": cells,
+                          "expected_row": i + 1, "actual_row": j + 1})
+        else:
+            matched += 1
+    for j, key in enumerate(act_keys):
+        if key not in exp_seen:
+            diffs.append({"key": key, "type": "extra", "expected": None, "actual": pad(actual[j], width),
+                          "cells": list(columns), "expected_row": None, "actual_row": j + 1})
+    return {"matched": matched, "diffs": diffs, "expected_count": len(expected), "actual_count": len(actual)}
+
+
+def apply_acceptance(columns: list[str], key_columns: list[str], baseline: list[list], actual: list[list],
+                     row_key: str, column: str | None = None) -> list[list]:
+    """Return a new baseline with one row (or one cell of it) taken from `actual`."""
+    width = len(columns)
+    rows = [pad(r, width) for r in baseline]
+    base_keys = row_keys(rows, columns, key_columns)
+    act_keys = row_keys(actual, columns, key_columns)
+    bi = base_keys.index(row_key) if row_key in base_keys else None
+    ai = act_keys.index(row_key) if row_key in act_keys else None
+    if bi is None and ai is None:
+        raise ValueError(f"Row '{row_key}' is in neither the baseline nor the actual result")
+
+    if column is not None:
+        if column not in columns:
+            raise ValueError(f"Unknown column '{column}'")
+        if bi is None or ai is None:
+            raise ValueError("A single cell can only be accepted on a row present on both sides")
+        rows[bi][columns.index(column)] = pad(actual[ai], width)[columns.index(column)]
+    elif bi is not None and ai is not None:
+        rows[bi] = pad(actual[ai], width)
+    elif bi is not None:
+        rows.pop(bi)
+    else:
+        rows.append(pad(actual[ai], width))
+    return rows
