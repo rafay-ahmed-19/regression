@@ -1,0 +1,4 @@
+::selection { background: #c7d2fe; color: #1e1b4b; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
