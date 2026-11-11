@@ -203,7 +203,7 @@ The app starts empty. You fill it by loading your own Excel workbooks; the
 
 The app checks results by running queries on an Oracle database where your build has already run.
 
-1. **Turn on the company VPN** on this computer, the same way you do for other work tools. The app
+1. **Connect to the SS&C VPN** on this computer, the same way you do for other work tools. The app
    reaches Oracle through your computer's network, so the VPN must be connected whenever you test a
    connection or start a run.
 2. In the app, click **Connections** in the left menu, then **Add connection**.

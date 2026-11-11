@@ -9,8 +9,8 @@ lets you either accept the change as the new baseline or treat it as a defect.
 - **The Hub checks results; it does not run the build.** You point it at an Oracle database where
   the build has already run. It runs each test point's SQL there and compares what comes back with
   the baseline.
-- **The Hub must be able to reach Oracle.** If your databases are only reachable over the company
-  VPN, connect the VPN on the computer that runs the Hub before you test a connection or start a run.
+- **The Hub must be able to reach Oracle.** Connect to the SS&C VPN on the computer that runs the
+  Hub before you test a connection, start a run or use the SQL workbench.
 - **There is no login.** Anyone who can open the app can use it, including the saved Oracle
   connections. When you change a baseline, you type your name and it is recorded.
 
@@ -191,7 +191,7 @@ Three settings on a test point matter most:
 
 Do this once for each database you want to check, for example UAT and a production copy.
 
-1. If your databases need the VPN, connect it first.
+1. Connect to the SS&C VPN first.
 2. Open **Connections** and click **Add connection**.
 3. Fill in the details. Your DBA or an existing SQL Developer connection has these values.
 

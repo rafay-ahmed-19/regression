@@ -46,7 +46,7 @@ When you start a run you choose its source.
 
 Oracle access uses [python-oracledb](https://python-oracledb.readthedocs.io) in thin mode, so no
 Oracle client has to be installed. The machine running the Hub must be able to reach the database,
-for example with the company VPN connected.
+for example with the SS&C VPN connected.
 
 ## Phase 1 limits
 
